@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <!-- PWA manifest + iOS meta -->
+  <link id="manifest-link" rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <title>BoxCounterMini v46 – Smartphone HTML (PWA + IndexedDB)</title>
+
+  <!-- Tailwind (Play CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          boxShadow: { soft: '0 4px 20px rgba(0,0,0,.06)' },
+          borderRadius: { xl2: '1rem' }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 UMD -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel Standalone -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- jsPDF für PDF-Export -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <!-- Fix für Safari/In‑App: regenerator-runtime -->
+  <script src="https://unpkg.com/regenerator-runtime@0.14.1/runtime.js"></script>
+
+  <style>html, body { background: #0f172a0d; }</style>
+</head>
+<body class="min-h-screen text-slate-900">
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react,typescript" data-plugins="proposal-optional-chaining,proposal-nullish-coalescing-operator">
+    const { useEffect, useState, useMemo } = React;
+
+    // IndexedDB Helper (ohne async/await)
+    const IDB = (function(){
+      const support = typeof indexedDB !== 'undefined';
+      var dbp = null;
+      function open(){
+        if (!support) return Promise.reject(new Error('no idb'));
+        if (dbp) return dbp;
+        dbp = new Promise(function(resolve, reject){
+          var req = indexedDB.open('bcm-db', 1);
+          req.onupgradeneeded = function(){
+            var db = req.result;
+            if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+          };
+          req.onsuccess = function(){ resolve(req.result); };
+          req.onerror   = function(){ reject(req.error||new Error('idb open error')); };
+        });
+        return dbp;
+      }
+      function get(key){
+        return open().then(function(db){
+          return new Promise(function(res,rej){
+            var tx=db.transaction('kv','readonly'); var st=tx.objectStore('kv');
+            var r=st.get(key); r.onsuccess=function(){res(r.result)}; r.onerror=function(){rej(r.error)};
+          });
+        });
+      }
+      function set(key, val){
+        return open().then(function(db){
+          return new Promise(function(res,rej){
+            var tx=db.transaction('kv','readwrite'); var st=tx.objectStore('kv');
+            var r=st.put(val, key); r.onsuccess=function(){res(true)}; r.onerror=function(){rej(r.error)};
+          });
+        });
+      }
+      return { support, open, get, set };
+    })();
+
+    const uid = function(){ return Math.random().toString(36).slice(2)+Date.now().toString(36); };
+    const titleCase = function(s){ return (s||'').trim().replace(/\s+/g,' ').toLowerCase().split(' ').map(function(w){ return w.charAt(0).toUpperCase()+w.slice(1); }).join(' '); };
+    const normalizeName = function(s){ return titleCase(String(s||'').trim()); };
+    const todayISO = function(){ return new Date().toISOString().slice(0,10); };
+    const fmtDEfromISO = function(iso){ if (!iso) return ''; var a=String(iso).split('-'); if (a.length!==3) return iso; return a[2]+'.'+a[1]+'.'+a[0]; };
+    const sumEntries = function(arr){ arr = arr||[]; return arr.reduce(function(a,b){ return a + (Number(b.qty)||0); }, 0); };
+    const dashTextFromEntries = function(arr){ arr=arr||[]; if (!arr.length) return '-'; return '-' + arr.map(function(x){return String(x.qty)}).join('-') + '-'; };
+    const downloadFile = function(filename, text, type){ type = type||'text/plain'; var blob = new Blob([text], { type }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000); };
+    const copyText = function(text){ try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); return true; } } catch(e) {} var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.style.position='fixed'; ta.style.opacity='0'; ta.select(); document.execCommand('copy'); document.body.removeChild(ta); return true; };
+
+    function parseCSV(text){
+      var raw0 = String(text||''); if (!raw0.trim()) return [];
+      var raw = raw0.replace(/\r/g,'').replace(/\\r/g,'').replace(/\\n/g,'\n').replace(/[\u2028\u2029]/g,'\n').trim();
+      var lines = raw.split(/\n+/); if (!lines.length) return [];
+      var header = lines.shift()||'';
+      var split = function(line){ return line.split(/\s*[,;]\s*/); };
+      var cols = header.split(/\s*[,;]\s*/).map(function(c){return c.trim().toLowerCase()});
+      var idx = {
+        produktlinie: cols.findIndex(function(c){return /produktlinie|productline|pl/.test(c)}),
+        baugruppe:    cols.findIndex(function(c){return /baugruppe|assembly|bg/.test(c)}),
+        artikelnr:    cols.findIndex(function(c){return /artikel(\s*)?(nr|nummer)?|article/.test(c)}),
+        max:          cols.findIndex(function(c){return /max|max_per_box|maxjegebinde|pro\s*gebinde/.test(c)})
+      };
+      var rows = [];
+      lines.forEach(function(line){
+        if (!line.trim()) return;
+        var parts = split(line);
+        rows.push({
+          produktlinie: (idx.produktlinie>=0? parts[idx.produktlinie] : '').trim(),
+          baugruppe:    (idx.baugruppe>=0?    parts[idx.baugruppe]    : '').trim(),
+          artikelnummer:(idx.artikelnr>=0?   parts[idx.artikelnr]     : '').trim(),
+          max_per_box:  Math.max(1, Number((idx.max>=0? parts[idx.max] : '20'))||20)
+        });
+      });
+      return rows;
+    }
+
+    const START_DATA = {
+      'Salsa': { assemblies: {
+        'Untergestell': { article_no: '57-90-10', max_per_box: 20 },
+        'Rückenteil':   { article_no: '57-90-12', max_per_box: 15 },
+        'Armstützenbügel': { article_no: '', max_per_box: 30 },
+      }},
+      'Sensai': { assemblies: {
+        'Rückenteil':   { article_no: '61-90-01-V4', max_per_box: 25 }
+      }},
+    };
+
+    function normalizeData(raw){
+      var out = {}; var source = raw && typeof raw === 'object' ? raw : {};
+      Object.keys(source).forEach(function(plKey){
+        var plN = normalizeName(plKey);
+        out[plN] = out[plN] || { assemblies: {} };
+        var asmObj = (source[plKey] && source[plKey].assemblies) || {};
+        Object.keys(asmObj).forEach(function(asmKey){
+          var asmN = normalizeName(asmKey); var val = asmObj[asmKey] || {}; var prev = out[plN].assemblies[asmN] || {};
+          out[plN].assemblies[asmN] = { article_no: (val.article_no != null ? val.article_no : (prev.article_no != null ? prev.article_no : '')).trim(), max_per_box: Math.max(1, Number(val.max_per_box || prev.max_per_box || 20)) };
+        });
+      });
+      return out;
+    }
+
+    class ErrorBoundary extends React.Component{
+      constructor(p){ super(p); this.state={err:null}; }
+      componentDidCatch(err,info){ this.setState({err}); console.error('UI error:', err, info); }
+      render(){ if(this.state.err){ return (
+        <div className="max-w-screen-md mx-auto p-4">
+          <div className="bg-rose-50 border border-rose-300 text-rose-800 rounded-xl p-3">
+            <div className="font-semibold">Es ist ein Fehler aufgetreten.</div>
+            <div className="text-xs mt-1">Bitte Produktlinie/Baugruppe prüfen. {String(this.state.err)}</div>
+          </div>
+        </div>
+      ); } return this.props.children; }
+    }
+
+    const Section = function({title, children, right}){
+      return (
+        <section className="bg-white rounded-2xl shadow-soft p-4 sm:p-6 mb-4 overflow-hidden">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg sm:text-xl font-semibold">{title}</h2>
+            {right}
+          </div>
+          {children}
+        </section>
+      );
+    };
+
+    const Button = function({children, onClick, disabled, variant='primary', className=''}){
+      return (
+        <button onClick={onClick} disabled={disabled}
+          className={
+            "px-4 py-3 rounded-xl text-sm font-medium active:scale-[.99] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white flex-none " +
+            (variant==='primary' ? "bg-indigo-600 text-white disabled:bg-indigo-300 " :
+             variant==='ghost'   ? "bg-slate-100 text-slate-800 hover:bg-slate-200 disabled:opacity-60 " :
+             variant==='danger'  ? "bg-rose-600 text-white disabled:bg-rose-300 " :
+             "bg-slate-100 text-slate-800 ") + className
+          }>
+          {children}
+        </button>
+      );
+    };
+    const Ghost = function(p){ return <Button {...p} variant="ghost"/> };
+    const Danger = function(p){ return <Button {...p} variant="danger"/> };
+
+    function PWASection(){
+      return (
+        <Section title="PWA – Installationsdateien (für Startbildschirm/Offline)">
+          <p className="text-sm text-slate-600 mb-3">Lade diese Dateien herunter und lege sie auf deinem Webspace ab:
+            <code className="ml-1">./manifest.webmanifest</code>, <code>./sw.js</code>, <code>./icons/icon-192.png</code>, <code>./icons/icon-512.png</code>.</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <Ghost onClick={function(){window.__bcm_pwa.dlManifest()}}>manifest.webmanifest</Ghost>
+            <Ghost onClick={function(){window.__bcm_pwa.dlSW()}}>sw.js</Ghost>
+            <Ghost onClick={function(){window.__bcm_pwa.dlIcon192()}}>icon-192.png</Ghost>
+            <Ghost onClick={function(){window.__bcm_pwa.dlIcon512()}}>icon-512.png</Ghost>
+          </div>
+          <p className="text-xs text-slate-500">Hinweis: Service Worker funktionieren nur auf <b>HTTPS</b> oder <b>localhost</b>. In‑App‑Browser (z. B. WhatsApp) blockieren oft die Installation.</p>
+        </Section>
+      );
+    }
+
+    function App(){
+      const inApp = /WhatsApp|FBAN|FBAV|Instagram|Line\/|WeChat|WebView/i.test(navigator.userAgent);
+      const [storeMode, setStoreMode] = useState('local');
+      const [storeReady, setStoreReady] = useState(false);
+      const [autoBackup, setAutoBackup] = useState(function(){ try { return JSON.parse(localStorage.getItem('bcm:autoBackup')||'true'); } catch (e) { return true; } });
+      const [dataRaw, setDataRaw] = useState(function(){ try { return normalizeData(JSON.parse(localStorage.getItem('bcm:dataRaw'))||START_DATA);}catch(e){ return normalizeData(START_DATA);} });
+      const [items, setItems] = useState(function(){ try { return JSON.parse(localStorage.getItem('bcm:items'))||[];}catch(e){ return []; } });
+      const [dateISO, setDateISO] = useState(function(){ return localStorage.getItem('bcm:dateISO') || todayISO(); });
+      const [dateText, setDateText] = useState(function(){ return localStorage.getItem('bcm:dateText') || fmtDEfromISO(localStorage.getItem('bcm:dateISO')||todayISO()); });
+      const [plSel, setPlSel]   = useState(function(){ return Object.keys(dataRaw)[0]||''; });
+      const [asmSel, setAsmSel] = useState(function(){ var firstAsm = plSel && dataRaw[plSel] ? Object.keys(dataRaw[plSel].assemblies)[0] : ''; return firstAsm || ''; });
+      const [qty, setQty] = useState(1);
+      const [alsoDeleteItemsFlag, setAlsoDeleteItemsFlag] = useState(true);
+      const [lastDeletion, setLastDeletion] = useState(null);
+      const [testResults, setTestResults] = useState([]);
+
+      function runSelfTests(){
+        var results=[];
+        try { results.push({name:'regeneratorRuntime present', ok: typeof window!=='undefined' && !!window.regeneratorRuntime && typeof window.regeneratorRuntime.wrap==='function'}); } catch(e){ results.push({name:'regeneratorRuntime present', ok:false, err:String(e)}); }
+        try { results.push({name:'dashText empty', ok: dashTextFromEntries([])==='-'});} catch(e){ results.push({name:'dashText empty', ok:false, err:String(e)}); }
+        try { results.push({name:'dashText basic', ok: dashTextFromEntries([{qty:5},{qty:10}])==='-5-10-'});} catch(e){ results.push({name:'dashText basic', ok:false, err:String(e)}); }
+        try { var rows = parseCSV('produktlinie;baugruppe;artikelnummer;max_per_box\nSalsa;Untergestell;57-90-10;20'); results.push({name:'parseCSV row', ok: rows.length===1 && rows[0].produktlinie==='Salsa' && rows[0].baugruppe==='Untergestell'});} catch(e){ results.push({name:'parseCSV row', ok:false, err:String(e)}); }
+        try { var norm = normalizeData({'salsa':{assemblies:{'rückenteil':{article_no:'X',max_per_box:7}}}}); results.push({name:'normalizeData', ok: !!(norm.Salsa && norm.Salsa.assemblies['Rückenteil'] && norm.Salsa.assemblies['Rückenteil'].max_per_box===7)});} catch(e){ results.push({name:'normalizeData', ok:false, err:String(e)}); }
+        setTestResults(results);
+      }
+
+      useEffect(function(){
+        if (!IDB.support) { setStoreMode('local'); setStoreReady(true); return; }
+        IDB.open()
+          .then(function(){ setStoreMode('idb'); return IDB.get('dataRaw'); })
+          .then(function(existing){
+            if (!existing) {
+              var lr = localStorage.getItem('bcm:dataRaw');
+              var li = localStorage.getItem('bcm:items');
+              var di = localStorage.getItem('bcm:dateISO');
+              var dt = localStorage.getItem('bcm:dateText');
+              var ab = localStorage.getItem('bcm:autoBackup');
+              var tasks = [];
+              if (lr) tasks.push(IDB.set('dataRaw', JSON.parse(lr)));
+              if (li) tasks.push(IDB.set('items', JSON.parse(li)));
+              if (di) tasks.push(IDB.set('dateISO', di));
+              if (dt) tasks.push(IDB.set('dateText', dt));
+              if (ab!=null) tasks.push(IDB.set('autoBackupFlag', JSON.parse(ab)));
+              return Promise.all(tasks);
+            }
+          })
+          .then(function(){ return Promise.all([ IDB.get('dataRaw'), IDB.get('items'), IDB.get('dateISO'), IDB.get('dateText'), IDB.get('autoBackupFlag') ]); })
+          .then(function(vals){
+            var dr = vals[0], it = vals[1], di2 = vals[2], dt2 = vals[3], abFlag = vals[4];
+            if (dr) setDataRaw(normalizeData(dr));
+            if (Array.isArray(it)) setItems(it);
+            if (typeof di2==='string') setDateISO(di2);
+            if (typeof dt2==='string') setDateText(dt2);
+            if (typeof abFlag==='boolean') setAutoBackup(abFlag);
+            setStoreReady(true);
+          })
+          .catch(function(e){ console.warn('IDB init failed, fallback localStorage', e); setStoreMode('local'); setStoreReady(true); });
+      }, []);
+
+      useEffect(function(){ try{ localStorage.setItem('bcm:dataRaw', JSON.stringify(dataRaw)); }catch(e){} if (storeMode==='idb') { IDB.set('dataRaw', dataRaw).catch(function(){}) } }, [dataRaw, storeMode]);
+      useEffect(function(){ try{ localStorage.setItem('bcm:items', JSON.stringify(items)); }catch(e){} if (storeMode==='idb') { IDB.set('items', items).catch(function(){}) } }, [items, storeMode]);
+      useEffect(function(){ try{ localStorage.setItem('bcm:dateISO', dateISO); }catch(e){} if (storeMode==='idb') { IDB.set('dateISO', dateISO).catch(function(){}) } }, [dateISO, storeMode]);
+      useEffect(function(){ try{ localStorage.setItem('bcm:dateText', dateText); }catch(e){} if (storeMode==='idb') { IDB.set('dateText', dateText).catch(function(){}) } }, [dateText, storeMode]);
+      useEffect(function(){ try{ localStorage.setItem('bcm:autoBackup', JSON.stringify(autoBackup)); }catch(e){} if (storeMode==='idb') { IDB.set('autoBackupFlag', autoBackup).catch(function(){}) } }, [autoBackup, storeMode]);
+
+      useEffect(function(){
+        var asms = plSel && dataRaw[plSel] ? Object.keys(dataRaw[plSel].assemblies) : [];
+        var nextAsm = asms[0]||'';
+        setAsmSel(nextAsm);
+        var mpb = nextAsm ? ((dataRaw[plSel] && dataRaw[plSel].assemblies && dataRaw[plSel].assemblies[nextAsm] && dataRaw[plSel].assemblies[nextAsm].max_per_box) || 20) : 20;
+        setQty(mpb);
+      }, [plSel, dataRaw]);
+
+      const maxForCurrent = useMemo(function(){
+        if (!plSel || !asmSel) return 20;
+        var it = dataRaw[plSel] && dataRaw[plSel].assemblies ? dataRaw[plSel].assemblies[asmSel] : null;
+        return it ? it.max_per_box : 20;
+      }, [plSel, asmSel, dataRaw]);
+
+      useEffect(function(){ if (qty>maxForCurrent) setQty(maxForCurrent); if (qty<1) setQty(1); }, [maxForCurrent]);
+
+      const findGreen = function(pl, asm){ return items.find(function(it){ return it.pl===pl && it.asm===asm && it.written; }); };
+      const findDraft = function(pl, asm){ return items.find(function(it){ return it.pl===pl && it.asm===asm && !it.written; }); };
+
+      const onAddEntry = function(){
+        if (!plSel || !asmSel) return;
+        var mpb = maxForCurrent;
+        var q = Math.max(1, Math.min(mpb, Number(qty)||mpb));
+        var article_no = (dataRaw[plSel] && dataRaw[plSel].assemblies && dataRaw[plSel].assemblies[asmSel] && dataRaw[plSel].assemblies[asmSel].article_no) || '';
+        var draft = findDraft(plSel, asmSel);
+        if (draft) { setItems(function(prev){ return prev.map(function(it){ return it.id===draft.id ? Object.assign({}, it, { entries: it.entries.concat([{qty:q}]), updatedAt: Date.now() }) : it; }); }); }
+        else { setItems(function(prev){ return prev.concat([{ id: uid(), pl: plSel, asm: asmSel, article_no: article_no, written:false, createdAt: Date.now(), updatedAt: Date.now(), entries:[{qty:q}] }]); }); }
+      };
+
+      const removeOneEntry = function(id, idx){ setItems(function(prev){ return prev.map(function(it){ return it.id===id ? Object.assign({}, it, { entries: it.entries.filter(function(_,i){return i!==idx}), updatedAt: Date.now() }) : it; }); }); };
+      const clearEntries   = function(id){ setItems(function(prev){ return prev.map(function(it){ return it.id===id ? Object.assign({}, it, { entries: [], updatedAt: Date.now() }) : it; }); }); };
+      const deleteItem     = function(id){ setItems(function(prev){ return prev.filter(function(it){ return it.id!==id; }); }); };
+
+      const markWritten = function(id){
+        var it = items.find(function(x){ return x.id===id; }); if (!it) return;
+        if (!it.written) {
+          var green = findGreen(it.pl, it.asm);
+          if (!green) { setItems(function(prev){ return prev.map(function(x){ return x.id===id ? Object.assign({}, x, { written:true, updatedAt: Date.now() }) : x; }); }); }
+          else {
+            var appended = it.entries.map(function(e){ return Object.assign({}, e, {isMerged:true}); });
+            setItems(function(prev){
+              return prev
+                .map(function(x){ return x.id===green.id ? Object.assign({}, x, { entries: x.entries.concat(appended), updatedAt: Date.now() }) : x; })
+                .filter(function(x){ return x.id!==id; });
+            });
+          }
+        } else { setItems(function(prev){ return prev.map(function(x){ return x.id===id ? Object.assign({}, x, { written:false, updatedAt: Date.now() }) : x; }); }); }
+      };
+
+      const makeBackup = function(){ return { version: 1, ts: Date.now(), data: { dataRaw: dataRaw, items: items, dateISO: dateISO, dateText: dateText } }; };
+      const applyBackup = function(bk){ if (!bk || !bk.data) throw new Error('Backupformat ungültig'); var d = bk.data; setDataRaw(normalizeData(d.dataRaw||{})); setItems(Array.isArray(d.items)? d.items : []); setDateISO(d.dateISO || todayISO()); setDateText(d.dateText || fmtDEfromISO(d.dateISO||todayISO())); };
+      const downloadBackup = function(){ try{ var bk=makeBackup(); downloadFile('boxcountermini-backup-'+new Date(bk.ts).toISOString().slice(0,10)+'.json', JSON.stringify(bk,null,2), 'application/json'); alert('Backup gespeichert (JSON).'); }catch(e){ alert('Backup fehlgeschlagen'); } };
+      const loadBackupFile  = function(file){ if(!file) return; var reader = new FileReader(); reader.onload=function(){ try{ var data=JSON.parse(String(reader.result||'{}')); applyBackup(data); alert('Backup importiert.'); }catch(e){ console.error(e); alert('Ungültige Backup-Datei'); } }; reader.readAsText(file); };
+
+      useEffect(function(){
+        var saver = function(){ try{ if (!autoBackup) return; var bk = makeBackup(); if (storeMode==='idb') IDB.set('autoBackup', bk).catch(function(){}) }catch(e){} };
+        window.addEventListener('pagehide', saver);
+        window.addEventListener('beforeunload', saver);
+        return function(){ window.removeEventListener('pagehide', saver); window.removeEventListener('beforeunload', saver); };
+      }, [autoBackup, storeMode, dataRaw, items, dateISO, dateText]);
+
+      const onImportCSV = function(file){
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(){
+          try {
+            var rows = parseCSV(String(reader.result||''));
+            if (!rows.length) { alert('Kein CSV erkannt'); return; }
+            var next = JSON.parse(JSON.stringify(dataRaw));
+            rows.forEach(function(r){
+              var pl = normalizeName(r.produktlinie||''); var asm= normalizeName(r.baugruppe||'');
+              if (!pl||!asm) return;
+              next[pl] = next[pl] || { assemblies:{} };
+              var cur = next[pl].assemblies[asm] || {};
+              next[pl].assemblies[asm] = { article_no: (r.artikelnummer||cur.article_no||'').trim(), max_per_box: Math.max(1, Number(r.max_per_box||cur.max_per_box||20)) };
+            });
+            setDataRaw(normalizeData(next));
+            var first = rows.find(function(r){ return r.produktlinie && r.baugruppe; });
+            if (first) { setPlSel(normalizeName(first.produktlinie)); setAsmSel(normalizeName(first.baugruppe)); }
+            alert(rows.length + ' Zeile(n) importiert.');
+          } catch (e) { console.error(e); alert('Import fehlgeschlagen'); }
+        };
+        reader.readAsText(file);
+      };
+
+      const deleteAssembly = function(pl, asm){
+        if (!pl||!asm) return;
+        var next = JSON.parse(JSON.stringify(dataRaw));
+        if (!next[pl] || !next[pl].assemblies[asm]) return;
+        var backupAsm = next[pl].assemblies[asm];
+        delete next[pl].assemblies[asm];
+        var removedItems = alsoDeleteItemsFlag ? items.filter(function(it){ return it.pl===pl && it.asm===asm; }) : [];
+        setDataRaw(normalizeData(next));
+        if (alsoDeleteItemsFlag && removedItems.length) { setItems(function(prev){ return prev.filter(function(it){ return !(it.pl===pl && it.asm===asm); }); }); }
+        setLastDeletion({ pl:pl, asm:asm, asmData: backupAsm, items: removedItems });
+        if (plSel===pl && asmSel===asm) { var asms = Object.keys(next[pl] && next[pl].assemblies || {}); setAsmSel(asms[0]||''); }
+      };
+
+      const undoDeletion = function(){
+        if (!lastDeletion) return;
+        var pl = lastDeletion.pl, asm = lastDeletion.asm, asmData = lastDeletion.asmData, removed = lastDeletion.items;
+        var next = JSON.parse(JSON.stringify(dataRaw));
+        next[pl] = next[pl] || { assemblies:{} };
+        next[pl].assemblies[asm] = asmData;
+        setDataRaw(normalizeData(next));
+        if (Array.isArray(removed) && removed.length) { setItems(function(prev){ return prev.concat(removed); }); }
+        setLastDeletion(null);
+        if (!asmSel) setAsmSel(asm);
+      };
+
+      const buildAllText = function(){
+        var lines = [];
+        if (dateText) lines.push(dateText);
+        items.forEach(function(it){
+          var head = it.article_no ? (it.pl + ' ' + it.asm + ' ' + it.article_no) : (it.pl + ' ' + it.asm);
+          lines.push(head);
+          lines.push(dashTextFromEntries(it.entries));
+          lines.push('Gesamt: ' + String(sumEntries(it.entries)));
+          lines.push('');
+        });
+        return lines.join('\n');
+      };
+
+      useEffect(function(){ window.buildAllText = function(){ if (!items || items.length===0) return '-'; return buildAllText(); }; }, [items, dateText]);
+
+      const onCopyAll = function(){ var ok = copyText(buildAllText()); if (ok) alert('Alle Zeilen kopiert.'); };
+      const onDownloadTXT = function(){ downloadFile('boxcountermini.txt', buildAllText()); };
+      const onDownloadCSV = function(){
+        var rows = [];
+        rows.push(['datum','produktlinie','baugruppe','artikelnummer','gebinde','gesamt'].join(';'));
+        items.forEach(function(it){
+          rows.push([ dateText||'', it.pl, it.asm, it.article_no||'', dashTextFromEntries(it.entries), String(sumEntries(it.entries)) ].map(function(x){ return '"'+String(x).replace(/"/g,'\\"')+'"'; }).join(';'));
+        });
+        downloadFile('boxcountermini.csv', rows.join('\n'), 'text/csv');
+      };
+      const onDownloadPDF = function(){
+        var jsPDF = window.jspdf && window.jspdf.jsPDF;
+        if (!jsPDF) { alert('jsPDF nicht geladen'); return; }
+        var doc = new jsPDF({ unit:'pt', format:'a4' });
+        var y = 40;
+        doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('BoxCounterMini – Übersicht', 40, y); y+=20;
+        doc.setFont('helvetica',''); doc.setFontSize(11);
+        if (dateText) { doc.text('Datum: ' + dateText, 40, y); y+=20; }
+        items.forEach(function(it){
+          var head = it.article_no ? (it.pl + ' ' + it.asm + ' ' + it.article_no) : (it.pl + ' ' + it.asm);
+          var body = dashTextFromEntries(it.entries);
+          var total= 'Gesamt: ' + String(sumEntries(it.entries));
+          [head, body, total, ''].forEach(function(line){
+            var split = doc.splitTextToSize(line, 515);
+            split.forEach(function(l){ if (y>780){ doc.addPage(); y=40; } doc.text(l, 40, y); y += 16; });
+          });
+        });
+        doc.save('boxcountermini.pdf');
+      };
+
+      function manifestJSON(){
+        return JSON.stringify({
+          name: 'BoxCounterMini',
+          short_name: 'BoxCounter',
+          start_url: './',
+          scope: './',
+          display: 'standalone',
+          background_color: '#ffffff',
+          theme_color: '#4f46e5',
+          icons: [
+            { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+            { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }
+          ]
+        }, null, 2);
+      }
+
+      function serviceWorkerJS(){
+        return "const CACHE='bcm-v1';\nconst CORE=['./','index.html','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png'];\nself.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()))});\nself.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>k!==CACHE&&caches.delete(k)))).then(()=>self.clients.claim()))});\nself.addEventListener('fetch',e=>{const r=e.request;if(r.method!=='GET')return; e.respondWith(caches.match(r).then(hit=>hit||fetch(r).then(res=>{try{const copy=res.clone(); caches.open(CACHE).then(c=>c.put(r,copy));}catch(_){} return res;}).catch(()=>hit||new Response('Offline',{status:503}))));});";
+      }
+
+      function createIconCanvas(size){
+        var c = document.createElement('canvas'); c.width = size; c.height = size;
+        var ctx = c.getContext('2d');
+        var g = ctx.createLinearGradient(0,0,size,size);
+        g.addColorStop(0,'#4f46e5'); g.addColorStop(1,'#6366f1');
+        ctx.fillStyle = g; ctx.fillRect(0,0,size,size);
+        ctx.globalAlpha = 0.08; ctx.fillStyle = '#ffffff';
+        for (var i=0;i<size;i+=Math.max(12, Math.floor(size/16))) { ctx.fillRect(i,0,1,size); ctx.fillRect(0,i,size,1); }
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold '+ Math.floor(size*0.5) +'px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('BC', size/2, size/2 + Math.floor(size*0.04));
+        return c;
+      }
+
+      function dataURLtoBlob(dataURL){
+        var parts = dataURL.split(','), mime = parts[0].match(/:(.*?);/)[1];
+        var bstr = atob(parts[1]); var n = bstr.length; var u8 = new Uint8Array(n);
+        for (var i=0;i<n;i++) u8[i] = bstr.charCodeAt(i);
+        return new Blob([u8], {type: mime});
+      }
+
+      function canvasToBlob(canvas){
+        return new Promise(function(resolve){
+          if (canvas.toBlob) { canvas.toBlob(function(b){ resolve(b); }, 'image/png'); }
+          else { resolve(dataURLtoBlob(canvas.toDataURL('image/png'))); }
+        });
+      }
+
+      function saveBlobSmart(name, blob){
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        var supportsDownload = 'download' in a;
+        var isIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent);
+        if (!supportsDownload || isIOS || (typeof inApp!=='undefined' && inApp)) {
+          var w = window.open(url, '_blank');
+          if (!w) alert('Icon wurde in einem neuen Tab geöffnet. Dort speichern (Langdruck/„Bild sichern“).');
+          setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+          return;
+        }
+        a.href = url; a.download = name; document.body.appendChild(a); a.click();
+        setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+      }
+
+      window.__bcm_pwa = {
+        dlManifest: function(){ return downloadFile('manifest.webmanifest', manifestJSON(), 'application/manifest+json'); },
+        dlSW:       function(){ return downloadFile('sw.js', serviceWorkerJS(), 'application/javascript'); },
+        dlIcon192:  function(){ return (createIconCanvas(192).toDataURL('image/png')); },
+        dlIcon512:  function(){ return (createIconCanvas(512).toDataURL('image/png')); },
+      };
+
+      // Wenn manifest fehlt: dynamisch setzen
+      try {
+        fetch('./manifest.webmanifest', {method:'HEAD'}).catch(function(){}).then(function(res){
+          if (!res || !res.ok) {
+            var blob = new Blob([manifestJSON()], {type:'application/manifest+json'});
+            var url  = URL.createObjectURL(blob);
+            var link = document.getElementById('manifest-link');
+            if (link) link.href = url;
+          }
+        });
+      } catch(_){ }
+
+      var plList = Object.keys(dataRaw);
+      var asmList = plSel ? Object.keys((dataRaw[plSel] && dataRaw[plSel].assemblies)||{}) : [];
+      var artForSel = (plSel && asmSel) ? (((dataRaw[plSel] && dataRaw[plSel].assemblies && dataRaw[plSel].assemblies[asmSel])||{}).article_no || '') : '';
+
+      const EntryLine = function({entries}){
+        entries = entries||[];
+        return (
+          <div className="font-mono text-sm sm:text-base whitespace-pre-wrap break-words">
+            <span>-</span>
+            {entries.map(function(e, i){
+              return (
+                <React.Fragment key={i}>
+                  <span className={e.isMerged? 'text-yellow-600 font-semibold' : ''}>{String(e.qty)}</span>
+                  <span>-</span>
+                </React.Fragment>
+              );
+            })}
+          </div>
+        );
+      };
+
+      return (
+        <div className="max-w-screen-md mx-auto p-3 sm:p-6">
+          <header className="mb-4 sm:mb-6">
+            <h1 className="text-2xl sm:text-3xl font-bold">BoxCounterMini</h1>
+            <p className="text-slate-600">IndexedDB‑Speicher • Auto‑Backup • CSV • Datum • Export (TXT/CSV/PDF) • Merge • Undo • PWA Dateien</p>
+            <div className="mt-2 text-sm text-slate-700">Aktuelles Datum: <span className="font-medium">{dateText||'—'}</span></div>
+          </header>
+
+          {(inApp || location.protocol!=='https:') && (
+            <div className="mb-4 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl p-3 text-sm">
+              Hinweis: Du nutzt vermutlich einen In‑App‑Browser (z. B. WhatsApp) oder kein HTTPS. Datei‑Importe & PWA‑Installation können blockiert sein. Öffne am besten in Chrome/Safari.
+            </div>
+          )}
+
+          <Section title="Datum">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">Datum (Picker)</label>
+                <input type="date" value={dateISO} onChange={function(e){ var v=e.target.value; setDateISO(v); setDateText(fmtDEfromISO(v)); }} className="w-full rounded-xl border border-slate-300 px-3 py-3" />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">Datum (Text, DE)</label>
+                <input type="text" value={dateText} onChange={function(e){ setDateText(e.target.value); }} placeholder="01.09.2025" className="w-full rounded-xl border border-slate-300 px-3 py-3" />
+              </div>
+              <div className="flex items-end gap-2">
+                <Button onClick={function(){ var t=todayISO(); setDateISO(t); setDateText(fmtDEfromISO(t)); }}>Heute</Button>
+                <Ghost onClick={function(){ setDateISO(''); setDateText(''); }}>Datum leeren</Ghost>
+              </div>
+            </div>
+          </Section>
+
+          <Section title="Auswahl & Eingabe">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">Produktlinie</label>
+                <select value={plSel} onChange={function(e){ setPlSel(e.target.value); }} className="w-full rounded-xl border border-slate-300 px-3 py-3">
+                  {plList.map(function(pl){ return <option key={pl} value={pl}>{pl}</option>; })}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">Baugruppe</label>
+                <select value={asmSel} onChange={function(e){ setAsmSel(e.target.value); }} className="w-full rounded-xl border border-slate-300 px-3 py-3">
+                  {asmList.map(function(a){ return <option key={a} value={a}>{a}</option>; })}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">Artikelnummer</label>
+                <input type="text" readOnly value={artForSel} className="w-full rounded-xl border border-slate-300 px-3 py-3 bg-slate-50" />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">Menge pro Gebinde (max. {maxForCurrent})</label>
+                <input type="number" min="1" max={maxForCurrent} value={qty} onChange={function(e){ setQty(Number(e.target.value)||1); }} className="w-full rounded-xl border border-slate-300 px-3 py-3" />
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={onAddEntry}>Gebinde hinzufügen</Button>
+                <Ghost onClick={function(){ setQty(maxForCurrent); }}>Auf Max</Ghost>
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-slate-500">Schlüssel ist immer (Produktlinie, Baugruppe). Artikelnummer hängt strikt an dieser Kombination – kein Vermischen zwischen Linien.</div>
+          </Section>
+
+          <Section title="Aktuelle Liste">
+            {items.length===0 && (<div className="text-sm text-slate-600">Noch keine Einträge. Füge oben ein Gebinde hinzu.</div>)}
+            <div className="space-y-3">
+              {items.map(function(it){
+                return (
+                  <div key={it.id} className={"rounded-xl border p-3 "+(it.written? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white')}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-semibold">{it.pl} {it.asm} {it.article_no? (<span className="text-slate-600 font-normal">{it.article_no}</span>) : null}</div>
+                        <EntryLine entries={it.entries}/>
+                        <div className="text-sm text-slate-700 mt-1">Gesamt: <span className="font-medium">{sumEntries(it.entries)}</span></div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Ghost onClick={function(){ markWritten(it.id) }}>{it.written? 'Als offen markieren' : 'Als fertig (grün)'}</Ghost>
+                        <Ghost onClick={function(){ clearEntries(it.id) }}>Mengen leeren</Ghost>
+                        <Danger onClick={function(){ deleteItem(it.id) }}>Eintrag löschen</Danger>
+                      </div>
+                    </div>
+                    {it.entries.length>0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {it.entries.map(function(e, idx){
+                          return (<button key={idx} title="Menge entfernen" onClick={function(){ removeOneEntry(it.id, idx); }} className="text-xs bg-slate-100 hover:bg-slate-200 rounded-lg px-2 py-1">{e.qty} ×</button>);
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Section>
+
+          <Section title="Export">
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={onCopyAll}>Alles kopieren</Button>
+              <Ghost onClick={onDownloadTXT}>TXT</Ghost>
+              <Ghost onClick={onDownloadCSV}>CSV</Ghost>
+              <Ghost onClick={onDownloadPDF}>PDF</Ghost>
+            </div>
+            <pre className="mt-3 text-xs bg-slate-50 p-3 rounded-xl overflow-x-auto">{buildAllText()}</pre>
+          </Section>
+
+          <Section title="Stammdaten importieren (CSV)" right={<Ghost onClick={function(){
+            var sample = [
+              'produktlinie,baugruppe,artikelnummer,max_per_box',
+              'Salsa,Untergestell,57-90-10,20',
+              'Salsa,Rückenteil,57-90-12,15',
+              'Sensai,Rückenteil,61-90-01-V4,25'
+            ].join('\n');
+            downloadFile('stammdaten-vorlage.csv', sample, 'text/csv');
+          }}>Vorlage herunterladen</Ghost>}>
+            <input type="file" accept=".csv,.txt" onChange={function(e){ onImportCSV(e.target.files && e.target.files[0]); e.target.value=''; }} className="block w-full text-sm text-slate-700 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
+            <p className="text-xs text-slate-500 mt-2">Erwartete Spalten: produktlinie,baugruppe,artikelnummer,max_per_box • Trennzeichen , oder ;</p>
+            <div className="mt-3">
+              <label className="block text-sm text-slate-600 mb-1">CSV aus Text (Fallback für In‑App‑Browser)</label>
+              <textarea id="csvText" rows={4} placeholder={`produktlinie,baugruppe,artikelnummer,max_per_box\nSalsa,Untergestell,57-90-10,20`} className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm"></textarea>
+              <div className="mt-2"><Button onClick={function(){
+                var t=document.getElementById('csvText').value; var rows=parseCSV(t); if(!rows.length){alert('Kein CSV erkannt');return;}
+                var next=JSON.parse(JSON.stringify(dataRaw));
+                rows.forEach(function(r){
+                  var pl=normalizeName(r.produktlinie||''); var asm=normalizeName(r.baugruppe||''); if(!pl||!asm)return;
+                  next[pl]=next[pl]||{assemblies:{}}; var cur=next[pl].assemblies[asm]||{};
+                  next[pl].assemblies[asm]={ article_no:(r.artikelnummer||cur.article_no||'').trim(), max_per_box:Math.max(1, Number(r.max_per_box||cur.max_per_box||20)) };
+                });
+                setDataRaw(normalizeData(next));
+                var first=rows.find(function(r){return r.produktlinie && r.baugruppe;});
+                if(first){ setPlSel(normalizeName(first.produktlinie)); setAsmSel(normalizeName(first.baugruppe)); }
+                alert(rows.length+' Zeile(n) importiert.');
+              }}>Import starten</Button></div>
+            </div>
+          </Section>
+
+          <Section title="Inventar verwalten (Baugruppe löschen)">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="text-sm">Aktuell: <span className="font-medium">{plSel} › {asmSel||'—'}</span></div>
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={alsoDeleteItemsFlag} onChange={function(e){ setAlsoDeleteItemsFlag(e.target.checked); }} />
+                <span>Auch zugehörige Listeneinträge entfernen</span>
+              </label>
+              <Danger onClick={function(){ if (!asmSel) return; if(confirm('Baugruppe wirklich löschen?')) deleteAssembly(plSel, asmSel); }} className="sm:ml-auto">Baugruppe löschen</Danger>
+            </div>
+            {lastDeletion && (
+              <div className="mt-3 text-sm bg-yellow-50 border border-yellow-200 rounded-xl p-3">Gelöscht: <b>{lastDeletion.pl}</b> › <b>{lastDeletion.asm}</b> – <button onClick={undoDeletion} className="underline">Rückgängig</button></div>
+            )}
+          </Section>
+
+          <PWASection/>
+
+          <Section title="Diagnose">
+            <div className="flex flex-wrap gap-2 items-center">
+              <Ghost onClick={runSelfTests}>Selbsttests ausführen</Ghost>
+              <span className="text-xs text-slate-500">{storeReady? (storeMode==='idb'? 'Speicher: IndexedDB' : 'Speicher: localStorage') : 'Initialisiere…'}</span>
+            </div>
+            {testResults.length>0 && (
+              <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {testResults.map(function(t,i){ return (
+                  <li key={i} className={'text-sm rounded-lg px-3 py-2 '+(t.ok?'bg-emerald-50 text-emerald-800':'bg-rose-50 text-rose-800')}>
+                    <span className="font-medium">{t.name}</span>: {t.ok? 'OK' : 'Fehler'} {t.err? (' – '+t.err):''}
+                  </li>
+                ); })}
+              </ul>
+            )}
+          </Section>
+
+          <footer className="mt-6 text-center text-xs text-slate-500">v46 • Offline‑fähig (nach Installation) • © BoxCounterMini</footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<ErrorBoundary><App/></ErrorBoundary>);
+  </script>
+
+  <!-- Service Worker registrieren -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function(){
+        navigator.serviceWorker.register('./sw.js').catch(function(e){ console.warn('SW-Registrierung fehlgeschlagen:', e); });
+      });
+    }
+  </script>
+</body>
+</html>
