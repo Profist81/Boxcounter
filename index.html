@@ -92,31 +92,46 @@
     const copyText = function(text){ try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); return true; } } catch(e) {} var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.style.position='fixed'; ta.style.opacity='0'; ta.select(); document.execCommand('copy'); document.body.removeChild(ta); return true; };
 
     function parseCSV(text){
-      var raw0 = String(text||''); if (!raw0.trim()) return [];
-      var raw = raw0.replace(/\r/g,'').replace(/\\r/g,'').replace(/\\n/g,'\n').replace(/[\u2028\u2029]/g,'\n').trim();
-      var lines = raw.split(/\n+/); if (!lines.length) return [];
-      var header = lines.shift()||'';
-      var split = function(line){ return line.split(/\s*[,;]\s*/); };
-      var cols = header.split(/\s*[,;]\s*/).map(function(c){return c.trim().toLowerCase()});
-      var idx = {
-        produktlinie: cols.findIndex(function(c){return /produktlinie|productline|pl/.test(c)}),
-        baugruppe:    cols.findIndex(function(c){return /baugruppe|assembly|bg/.test(c)}),
-        artikelnr:    cols.findIndex(function(c){return /artikel(\s*)?(nr|nummer)?|article/.test(c)}),
-        max:          cols.findIndex(function(c){return /max|max_per_box|maxjegebinde|pro\s*gebinde/.test(c)})
-      };
-      var rows = [];
-      lines.forEach(function(line){
-        if (!line.trim()) return;
-        var parts = split(line);
-        rows.push({
-          produktlinie: (idx.produktlinie>=0? parts[idx.produktlinie] : '').trim(),
-          baugruppe:    (idx.baugruppe>=0?    parts[idx.baugruppe]    : '').trim(),
-          artikelnummer:(idx.artikelnr>=0?   parts[idx.artikelnr]     : '').trim(),
-          max_per_box:  Math.max(1, Number((idx.max>=0? parts[idx.max] : '20'))||20)
-        });
-      });
-      return rows;
-    }
+  var raw0 = String(text||'');
+  if (!raw0.trim()) return [];
+  var raw = raw0.replace(/\r/g,'').replace(/\\r/g,'').replace(/\\n/g,'\n')
+               .replace(/[\u2028\u2029]/g,'\n').trim();
+  var lines = raw.split(/\n+/); if (!lines.length) return [];
+
+  var split = function(line){ return line.split(/\s*[,;\t]\s*/); };
+  var cols  = split(lines.shift()||'').map(c=>c.trim().toLowerCase());
+
+  function findIdx(re){ return cols.findIndex(c=>re.test(c)); }
+
+  const idxArt = findIdx(/artikel\s*(nr|nummer)?|art[\.\s_-]*nr|article/);
+  const idxPL  = findIdx(/produktlinie|product\s*line|^pl$/);
+  const idxBG  = findIdx(/^baugruppe$|assembly|^bg$/);
+  const idxBT  = findIdx(/bauteil|komponente|teilbezeichnung/);
+  const idxMax = findIdx(/max[_\s]*per[_\s]*box|maxjegebinde|pro\s*gebinde|teile\s*in\s*gib|teile(?:\s*je)?\s*gebinde|menge\s*(je|pro)\s*gebinde/);
+
+  const idxProdline = (idxPL>=0) ? idxPL : ((idxBG>=0)? idxBG : -1); // Fallback: „Baugruppe“ = Produktlinie
+  const idxAssembly = (idxBT>=0) ? idxBT : ((idxPL>=0)? idxBG : -1); // Fallback: „Bauteil“ → Assembly
+
+  var rows = [];
+  lines.forEach(line=>{
+    if (!line.trim()) return;
+    var parts = split(line);
+
+    var maxRaw = (idxMax>=0 ? (parts[idxMax]||'') : '').toString().trim();   // z.B. "K", "P", "30/30", "20"
+    // Numerischer Fallback NUR für interne Limits (falls nötig)
+    var num = Number(maxRaw.replace(',', '.'));
+    var maxNum = (isFinite(num) && !isNaN(num)) ? Math.max(1, num) : 20;
+
+    rows.push({
+      produktlinie: (idxProdline>=0 ? (parts[idxProdline]||'') : '').trim(),
+      baugruppe:    (idxAssembly>=0 ? (parts[idxAssembly]||'') : '').trim(),
+      artikelnummer:(idxArt>=0 ? (parts[idxArt]||'') : '').trim(),
+      max_per_box:  maxNum,        // numerischer Fallback
+      max_label:    maxRaw         // ORIGINAL (z.B. "K", "P", "30/30")
+    });
+  });
+  return rows;
+}
 
     const START_DATA = {
       'Salsa': { assemblies: {
@@ -129,19 +144,26 @@
       }},
     };
 
-    function normalizeData(raw){
-      var out = {}; var source = raw && typeof raw === 'object' ? raw : {};
-      Object.keys(source).forEach(function(plKey){
-        var plN = normalizeName(plKey);
-        out[plN] = out[plN] || { assemblies: {} };
-        var asmObj = (source[plKey] && source[plKey].assemblies) || {};
-        Object.keys(asmObj).forEach(function(asmKey){
-          var asmN = normalizeName(asmKey); var val = asmObj[asmKey] || {}; var prev = out[plN].assemblies[asmN] || {};
-          out[plN].assemblies[asmN] = { article_no: (val.article_no != null ? val.article_no : (prev.article_no != null ? prev.article_no : '')).trim(), max_per_box: Math.max(1, Number(val.max_per_box || prev.max_per_box || 20)) };
-        });
-      });
-      return out;
-    }
+   function normalizeData(raw){
+  var out = {}; var source = raw && typeof raw === 'object' ? raw : {};
+  Object.keys(source).forEach(function(plKey){
+    var plN = normalizeName(plKey);
+    out[plN] = out[plN] || { assemblies: {} };
+    var asmObj = (source[plKey] && source[plKey].assemblies) || {};
+    Object.keys(asmObj).forEach(function(asmKey){
+      var asmN = normalizeName(asmKey);
+      var val  = asmObj[asmKey] || {};
+      var prev = out[plN].assemblies[asmN] || {};
+      out[plN].assemblies[asmN] = {
+        article_no: (val.article_no != null ? val.article_no : (prev.article_no != null ? prev.article_no : '')).trim(),
+        max_per_box: Math.max(1, Number(val.max_per_box || prev.max_per_box || 20)),
+        max_label: (val.max_label != null ? String(val.max_label) :
+                   (prev.max_label != null ? String(prev.max_label) : String(val.max_per_box || prev.max_per_box || '')))
+      };
+    });
+  });
+  return out;
+}
 
     class ErrorBoundary extends React.Component{
       constructor(p){ super(p); this.state={err:null}; }
@@ -225,25 +247,26 @@ function onManualSave(){
   const pl  = normalizeName(mPl||'').trim();
   const asm = normalizeName(mAsm||'').trim();
   const art = (mArt||'').trim();
-  const max = Math.max(1, Number(mMax)||20);
+  const maxRaw = String(mMax).trim();                 // kann "K", "P", "30/30" etc. sein
+  const isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
+  const maxNum = isNum ? Math.max(1, Number(maxRaw)) : 20;
 
   if (!pl || !asm) { alert('Produktlinie und Baugruppe sind Pflicht.'); return; }
 
-  setDataRaw(prev => {
+  setDataRaw(prev=>{
     const next = JSON.parse(JSON.stringify(prev||{}));
-    next[pl] = next[pl] || { assemblies: {} };
+    next[pl] = next[pl] || { assemblies:{} };
     const prevAsm = next[pl].assemblies[asm] || {};
     next[pl].assemblies[asm] = {
       article_no: (art || prevAsm.article_no || '').trim(),
-      max_per_box: Math.max(1, Number(max || prevAsm.max_per_box || 20))
+      max_per_box: maxNum,
+      max_label: maxRaw || prevAsm.max_label || String(maxNum)
     };
     return normalizeData(next);
   });
 
-  setPlSel(pl);
-  setAsmSel(asm);
-  setQty(max);
-
+  setPlSel(pl); setAsmSel(asm);
+  setQty(maxRaw);            // Default auf das eingegebene Label
   setMPl(''); setMAsm(''); setMArt(''); setMMax(20);
   alert('Gespeichert.');
 }
@@ -300,12 +323,15 @@ function onManualSave(){
       useEffect(function(){ try{ localStorage.setItem('bcm:autoBackup', JSON.stringify(autoBackup)); }catch(e){} if (storeMode==='idb') { IDB.set('autoBackupFlag', autoBackup).catch(function(){}) } }, [autoBackup, storeMode]);
 
       useEffect(function(){
-        var asms = plSel && dataRaw[plSel] ? Object.keys(dataRaw[plSel].assemblies) : [];
-        var nextAsm = asms[0]||'';
-        setAsmSel(nextAsm);
-        var mpb = nextAsm ? ((dataRaw[plSel] && dataRaw[plSel].assemblies && dataRaw[plSel].assemblies[nextAsm] && dataRaw[plSel].assemblies[nextAsm].max_per_box) || 20) : 20;
-        setQty(mpb);
-      }, [plSel, dataRaw]);
+  var asms = plSel && dataRaw[plSel] ? Object.keys(dataRaw[plSel].assemblies) : [];
+  var nextAsm = asms[0]||'';
+  setAsmSel(nextAsm);
+  var entry = nextAsm ? (dataRaw[plSel]?.assemblies?.[nextAsm] || null) : null;
+  var mpb   = entry ? (entry.max_per_box || 20) : 20;
+  var label = entry ? (entry.max_label || '') : '';
+  // Wenn label nicht rein numerisch ist, als Default übernehmen (z.B. "K", "P", "30/30")
+  setQty(label && !/^\d+(\.\d+)?$/.test(label) ? label : mpb);
+}, [plSel, dataRaw]);
 
       const maxForCurrent = useMemo(function(){
         if (!plSel || !asmSel) return 20;
@@ -319,14 +345,28 @@ function onManualSave(){
       const findDraft = function(pl, asm){ return items.find(function(it){ return it.pl===pl && it.asm===asm && !it.written; }); };
 
       const onAddEntry = function(){
-        if (!plSel || !asmSel) return;
-        var mpb = maxForCurrent;
-        var q = Math.max(1, Math.min(mpb, Number(qty)||mpb));
-        var article_no = (dataRaw[plSel] && dataRaw[plSel].assemblies && dataRaw[plSel].assemblies[asmSel] && dataRaw[plSel].assemblies[asmSel].article_no) || '';
-        var draft = findDraft(plSel, asmSel);
-        if (draft) { setItems(function(prev){ return prev.map(function(it){ return it.id===draft.id ? Object.assign({}, it, { entries: it.entries.concat([{qty:q}]), updatedAt: Date.now() }) : it; }); }); }
-        else { setItems(function(prev){ return prev.concat([{ id: uid(), pl: plSel, asm: asmSel, article_no: article_no, written:false, createdAt: Date.now(), updatedAt: Date.now(), entries:[{qty:q}] }]); }); }
-      };
+  if (!plSel || !asmSel) return;
+  var entry = dataRaw[plSel]?.assemblies?.[asmSel] || {};
+  var mpb   = entry.max_per_box || 20;
+
+  var qInput = String(qty).trim();
+  var isNum  = /^\d+(\.\d+)?$/.test(qInput);
+  var q      = isNum ? Math.max(1, Math.min(mpb, Number(qInput))) : qInput.toUpperCase();
+
+  var article_no = entry.article_no || '';
+  var draft = findDraft(plSel, asmSel);
+  if (draft) {
+    setItems(prev => prev.map(it => it.id===draft.id
+      ? {...it, entries: it.entries.concat([{qty:q}]), updatedAt: Date.now()}
+      : it));
+  } else {
+    setItems(prev => prev.concat([{
+      id: uid(), pl: plSel, asm: asmSel, article_no,
+      written:false, createdAt: Date.now(), updatedAt: Date.now(),
+      entries:[{qty:q}]
+    }]));
+  }
+};
 
       const removeOneEntry = function(id, idx){ setItems(function(prev){ return prev.map(function(it){ return it.id===id ? Object.assign({}, it, { entries: it.entries.filter(function(_,i){return i!==idx}), updatedAt: Date.now() }) : it; }); }); };
       const clearEntries   = function(id){ setItems(function(prev){ return prev.map(function(it){ return it.id===id ? Object.assign({}, it, { entries: [], updatedAt: Date.now() }) : it; }); }); };
@@ -611,9 +651,17 @@ function onManualSave(){
                 <input type="text" readOnly value={artForSel} className="w-full rounded-xl border border-slate-300 px-3 py-3 bg-slate-50" />
               </div>
               <div>
-                <label className="block text-sm text-slate-600 mb-1">Menge pro Gebinde (max. {maxForCurrent})</label>
-                <input type="number" min="1" max={maxForCurrent} value={qty} onChange={function(e){ setQty(Number(e.target.value)||1); }} className="w-full rounded-xl border border-slate-300 px-3 py-3" />
-              </div>
+  <label className="block text-sm text-slate-600 mb-1">
+    Menge pro Gebinde (max. {(dataRaw[plSel]?.assemblies?.[asmSel]?.max_label) ?? maxForCurrent})
+  </label>
+  <input
+    type="text"
+    value={qty}
+    onChange={e=>setQty(e.target.value)}
+    className="w-full rounded-xl border border-slate-300 px-3 py-3"
+    placeholder="z.B. 20 oder K / P / 30/30"
+  />
+</div>
               <div className="flex gap-2">
                 <Button onClick={onAddEntry}>Gebinde hinzufügen</Button>
                 <Ghost onClick={function(){ setQty(maxForCurrent); }}>Auf Max</Ghost>
