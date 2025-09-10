@@ -215,6 +215,41 @@
       const [qty, setQty] = useState(1);
       const [alsoDeleteItemsFlag, setAlsoDeleteItemsFlag] = useState(true);
       const [lastDeletion, setLastDeletion] = useState(null);
+      // --- Manuelles Hinzufügen ---
+const [mPl,  setMPl]  = useState('');
+const [mAsm, setMAsm] = useState('');
+const [mArt, setMArt] = useState('');
+const [mMax, setMMax] = useState(20);
+
+function onManualSave(){
+  var pl  = normalizeName(mPl||'').trim();
+  var asm = normalizeName(mAsm||'').trim();
+  var art = (mArt||'').trim();
+  var max = Math.max(1, Number(mMax)||20);
+
+  if (!pl || !asm) { alert('Produktlinie und Baugruppe sind Pflicht.'); return; }
+
+  setDataRaw(function(prev){
+    var next = JSON.parse(JSON.stringify(prev||{}));
+    next[pl] = next[pl] || { assemblies: {} };
+    var prevAsm = next[pl].assemblies[asm] || {};
+    next[pl].assemblies[asm] = {
+      article_no: (art || prevAsm.article_no || '').trim(),
+      max_per_box: Math.max(1, Number(max || prevAsm.max_per_box || 20))
+    };
+    return normalizeData(next);
+  });
+
+  // Auf neue Auswahl umschalten
+  setPlSel(pl);
+  setAsmSel(asm);
+  setQty(Math.max(1, Math.min(max, max)));
+
+  // Felder leeren
+  setMPl(''); setMAsm(''); setMArt(''); setMMax(20);
+  alert('Gespeichert.');
+}
+
       const [testResults, setTestResults] = useState([]);
 
       function runSelfTests(){
@@ -588,8 +623,38 @@
             </div>
             <div className="mt-3 text-xs text-slate-500">Schlüssel ist immer (Produktlinie, Baugruppe). Artikelnummer hängt strikt an dieser Kombination – kein Vermischen zwischen Linien.</div>
           </Section>
+          </Section>
+
+{/* NEU: Produkt manuell hinzufügen */}
+<Section title="Produkt manuell hinzufügen">
+  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+    <input className="w-full rounded-xl border border-slate-300 px-3 py-3"
+           placeholder="Produktlinie"
+           value={mPl} onChange={e=>setMPl(e.target.value)} />
+    <input className="w-full rounded-xl border border-slate-300 px-3 py-3"
+           placeholder="Baugruppe"
+           value={mAsm} onChange={e=>setMAsm(e.target.value)} />
+    <input className="w-full rounded-xl border border-slate-300 px-3 py-3"
+           placeholder="Artikelnummer (optional)"
+           value={mArt} onChange={e=>setMArt(e.target.value)} />
+    <input type="number" min="1"
+           className="w-full rounded-xl border border-slate-300 px-3 py-3"
+           placeholder="Max je Gebinde"
+           value={mMax} onChange={e=>setMMax(e.target.value)} />
+  </div>
+  <div className="mt-3 flex gap-2">
+    <Button onClick={onManualSave}>Speichern</Button>
+    <Ghost onClick={()=>{ setMPl(''); setMAsm(''); setMArt(''); setMMax(20); }}>Felder leeren</Ghost>
+  </div>
+  <p className="text-xs text-slate-500 mt-2">
+    Hinweis: Bestehende Kombinationen (Produktlinie+Baugruppe) werden aktualisiert.
+  </p>
+</Section>
+
+<Section title="Aktuelle Liste">
 
           <Section title="Aktuelle Liste">
+
             {items.length===0 && (<div className="text-sm text-slate-600">Noch keine Einträge. Füge oben ein Gebinde hinzu.</div>)}
             <div className="space-y-3">
               {items.map(function(it){
