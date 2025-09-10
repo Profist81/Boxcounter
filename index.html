@@ -94,42 +94,71 @@
     function parseCSV(text){
   var raw0 = String(text||'');
   if (!raw0.trim()) return [];
-  var raw = raw0.replace(/\r/g,'').replace(/\\r/g,'').replace(/\\n/g,'\n')
-               .replace(/[\u2028\u2029]/g,'\n').trim();
-  var lines = raw.split(/\n+/); if (!lines.length) return [];
+  // Zeilen vereinheitlichen
+  var raw = raw0.replace(/^\uFEFF/, '') // BOM
+                .replace(/\r/g,'').replace(/\\r/g,'')
+                .replace(/\\n/g,'\n').replace(/[\u2028\u2029]/g,'\n').trim();
+  var lines = raw.split(/\n+/);
+  if (!lines.length) return [];
 
-  var split = function(line){ return line.split(/\s*[,;\t]\s*/); };
-  var cols  = split(lines.shift()||'').map(c=>c.trim().toLowerCase());
+  // Trennzeichen , ; oder Tab
+  var split = (line)=> line.split(/\s*[,;\t]\s*/);
 
-  function findIdx(re){ return cols.findIndex(c=>re.test(c)); }
+  // Kopfzeile erkennen – falls die erste Zeile „wie Daten“ aussieht, behandeln wir sie als Daten
+  var headerParts = split(lines[0]||'').map(s=>s.trim().toLowerCase());
+  var looksLikeHeader =
+    headerParts.some(s => /artikel|baugruppe|bauteil|max|teile|gib|product|assembly/.test(s));
+  if (!looksLikeHeader) {
+    // künstliche Standard-Kopfzeile anlegen: [Artikelnummer;Baugruppe;Bauteil;Teile]
+    headerParts = ['artikelnummer','baugruppe','bauteil','teile'];
+  } else {
+    lines.shift(); // echte Kopfzeile entfernen
+  }
 
-  const idxArt = findIdx(/artikel\s*(nr|nummer)?|art[\.\s_-]*nr|article/);
-  const idxPL  = findIdx(/produktlinie|product\s*line|^pl$/);
-  const idxBG  = findIdx(/^baugruppe$|assembly|^bg$/);
-  const idxBT  = findIdx(/bauteil|komponente|teilbezeichnung/);
-  const idxMax = findIdx(/max[_\s]*per[_\s]*box|maxjegebinde|pro\s*gebinde|teile\s*in\s*gib|teile(?:\s*je)?\s*gebinde|menge\s*(je|pro)\s*gebinde/);
+  // Indizes suchen
+  const idx = (re)=> headerParts.findIndex(c=>re.test(c));
+  let idxArt = idx(/artikel\s*(nr|nummer)?|art[\.\s_-]*nr|article/);
+  let idxPL  = idx(/produktlinie|product\s*line|^pl$/);
+  let idxBG  = idx(/^baugruppe$|assembly|^bg$/);
+  let idxBT  = idx(/bauteil|komponente|teilbezeichnung/);
+  let idxMax = idx(/max[_\s]*per[_\s]*box|maxjegebinde|pro\s*gebinde|teile\s*in\s*gib|teile(?:\s*je)?\s*gebinde|menge\s*(je|pro)\s*gebinde|teile$/);
 
-  const idxProdline = (idxPL>=0) ? idxPL : ((idxBG>=0)? idxBG : -1); // Fallback: „Baugruppe“ = Produktlinie
-  const idxAssembly = (idxBT>=0) ? idxBT : ((idxPL>=0)? idxBG : -1); // Fallback: „Bauteil“ → Assembly
+  // Wenn nichts gefunden wurde: Positions-Fallback (0: ArtNr, 1: Baugruppe→Produktlinie, 2: Bauteil→Assembly, letzte Spalte: Max/Teile)
+  if (idxArt<0) idxArt = 0;
+  if (idxPL<0 && idxBG<0) idxBG = 1;
+  if (idxBT<0) idxBT = 2;
+  if (idxMax<0) idxMax = headerParts.length-1;
 
-  var rows = [];
+  // Mapping: Produktlinie = PL (sonst BG), Assembly = BT (sonst BG)
+  const idxProdline = (idxPL>=0) ? idxPL : idxBG;
+  const idxAssembly = (idxBT>=0) ? idxBT : idxBG;
+
+  const rows = [];
   lines.forEach(line=>{
     if (!line.trim()) return;
-    var parts = split(line);
+    const parts = split(line);
 
-    var maxRaw = (idxMax>=0 ? (parts[idxMax]||'') : '').toString().trim();   // z.B. "K", "P", "30/30", "20"
-    // Numerischer Fallback NUR für interne Limits (falls nötig)
-    var num = Number(maxRaw.replace(',', '.'));
-    var maxNum = (isFinite(num) && !isNaN(num)) ? Math.max(1, num) : 20;
+    const pl  = (parts[idxProdline]||'').trim();
+    const asm = (parts[idxAssembly]||'').trim();
+    const art = (parts[idxArt]||'').trim();
+    const maxRaw = String(parts[idxMax]||'').trim();   // z.B. "K", "P", "30/30", "20"
 
-    rows.push({
-      produktlinie: (idxProdline>=0 ? (parts[idxProdline]||'') : '').trim(),
-      baugruppe:    (idxAssembly>=0 ? (parts[idxAssembly]||'') : '').trim(),
-      artikelnummer:(idxArt>=0 ? (parts[idxArt]||'') : '').trim(),
-      max_per_box:  maxNum,        // numerischer Fallback
-      max_label:    maxRaw         // ORIGINAL (z.B. "K", "P", "30/30")
-    });
+    // numerischer Fallback NUR intern, Label bleibt 1:1 erhalten
+    const num = Number(maxRaw.replace(',', '.'));
+    const maxNum = (isFinite(num) && !isNaN(num)) ? Math.max(1, num) : 20;
+
+    // nur gültige Kombinationen übernehmen
+    if (pl && asm) {
+      rows.push({
+        produktlinie: pl,
+        baugruppe:    asm,
+        artikelnummer: art,
+        max_per_box:   maxNum,
+        max_label:     maxRaw || String(maxNum)
+      });
+    }
   });
+
   return rows;
 }
 
@@ -409,16 +438,16 @@ function onManualSave(){
       if (!rows.length) { alert('Kein CSV erkannt'); return; }
 
       var next = JSON.parse(JSON.stringify(dataRaw || {}));
+      var added = 0, firstPL='', firstASM='';
 
       rows.forEach(function(r){
         var pl  = normalizeName(r.produktlinie||'');
         var asm = normalizeName(r.baugruppe||'');
         if (!pl || !asm) return;
 
-        next[pl] = next[pl] || { assemblies: {} };
+        next[pl] = next[pl] || { assemblies:{} };
         var cur  = next[pl].assemblies[asm] || {};
 
-        // Zahl für interne Limits + Label (K/P/30/30) beides speichern
         var maxRaw = String(r.max_label != null ? r.max_label : r.max_per_box || '').trim();
         var isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
         var maxNum = isNum ? Math.max(1, Number(maxRaw)) : Math.max(1, Number(r.max_per_box || cur.max_per_box || 20));
@@ -426,24 +455,27 @@ function onManualSave(){
         next[pl].assemblies[asm] = {
           article_no: (r.artikelnummer || cur.article_no || '').trim(),
           max_per_box: maxNum,
-          max_label: (maxRaw || cur.max_label || String(maxNum))
+          max_label: maxRaw || cur.max_label || String(maxNum)
         };
+        added++;
+        if (!firstPL){ firstPL = pl; firstASM = asm; }
       });
 
-      // Normalisieren + **sofort** persistent speichern
       var nextNorm = normalizeData(next);
+      if (!added || !Object.keys(nextNorm).length) {
+        alert('CSV gelesen, aber keine gültigen Zeilen erkannt.\nBitte Kopfzeile prüfen oder die Spaltenreihenfolge: ArtNr;Baugruppe;Bauteil;Teile');
+        return;
+      }
+
       setDataRaw(nextNorm);
       try { localStorage.setItem('bcm:dataRaw', JSON.stringify(nextNorm)); } catch(e){}
       if (storeMode === 'idb') { IDB.set('dataRaw', nextNorm).catch(function(){}); }
 
-      // Auswahl auf den ersten sinnvollen Datensatz setzen
-      var first = rows.find(function(r){ return r.produktlinie && r.baugruppe; });
-      if (first) {
-        setPlSel(normalizeName(first.produktlinie));
-        setAsmSel(normalizeName(first.baugruppe));
-      }
+      // Auswahl auf ersten importierten Datensatz setzen
+      setPlSel(firstPL);
+      setAsmSel(firstASM);
 
-      alert(rows.length + ' Zeile(n) importiert.');
+      alert(added + ' Datensätze übernommen.');
     } catch (e) {
       console.error(e);
       alert('Import fehlgeschlagen');
