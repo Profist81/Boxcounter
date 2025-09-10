@@ -401,28 +401,56 @@ function onManualSave(){
       }, [autoBackup, storeMode, dataRaw, items, dateISO, dateText]);
 
       const onImportCSV = function(file){
-        if (!file) return;
-        var reader = new FileReader();
-        reader.onload = function(){
-          try {
-            var rows = parseCSV(String(reader.result||''));
-            if (!rows.length) { alert('Kein CSV erkannt'); return; }
-            var next = JSON.parse(JSON.stringify(dataRaw));
-            rows.forEach(function(r){
-              var pl = normalizeName(r.produktlinie||''); var asm= normalizeName(r.baugruppe||'');
-              if (!pl||!asm) return;
-              next[pl] = next[pl] || { assemblies:{} };
-              var cur = next[pl].assemblies[asm] || {};
-              next[pl].assemblies[asm] = { article_no: (r.artikelnummer||cur.article_no||'').trim(), max_per_box: Math.max(1, Number(r.max_per_box||cur.max_per_box||20)) };
-            });
-            setDataRaw(normalizeData(next));
-            var first = rows.find(function(r){ return r.produktlinie && r.baugruppe; });
-            if (first) { setPlSel(normalizeName(first.produktlinie)); setAsmSel(normalizeName(first.baugruppe)); }
-            alert(rows.length + ' Zeile(n) importiert.');
-          } catch (e) { console.error(e); alert('Import fehlgeschlagen'); }
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(){
+    try {
+      var rows = parseCSV(String(reader.result||''));
+      if (!rows.length) { alert('Kein CSV erkannt'); return; }
+
+      var next = JSON.parse(JSON.stringify(dataRaw || {}));
+
+      rows.forEach(function(r){
+        var pl  = normalizeName(r.produktlinie||'');
+        var asm = normalizeName(r.baugruppe||'');
+        if (!pl || !asm) return;
+
+        next[pl] = next[pl] || { assemblies: {} };
+        var cur  = next[pl].assemblies[asm] || {};
+
+        // Zahl für interne Limits + Label (K/P/30/30) beides speichern
+        var maxRaw = String(r.max_label != null ? r.max_label : r.max_per_box || '').trim();
+        var isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
+        var maxNum = isNum ? Math.max(1, Number(maxRaw)) : Math.max(1, Number(r.max_per_box || cur.max_per_box || 20));
+
+        next[pl].assemblies[asm] = {
+          article_no: (r.artikelnummer || cur.article_no || '').trim(),
+          max_per_box: maxNum,
+          max_label: (maxRaw || cur.max_label || String(maxNum))
         };
-        reader.readAsText(file);
-      };
+      });
+
+      // Normalisieren + **sofort** persistent speichern
+      var nextNorm = normalizeData(next);
+      setDataRaw(nextNorm);
+      try { localStorage.setItem('bcm:dataRaw', JSON.stringify(nextNorm)); } catch(e){}
+      if (storeMode === 'idb') { IDB.set('dataRaw', nextNorm).catch(function(){}); }
+
+      // Auswahl auf den ersten sinnvollen Datensatz setzen
+      var first = rows.find(function(r){ return r.produktlinie && r.baugruppe; });
+      if (first) {
+        setPlSel(normalizeName(first.produktlinie));
+        setAsmSel(normalizeName(first.baugruppe));
+      }
+
+      alert(rows.length + ' Zeile(n) importiert.');
+    } catch (e) {
+      console.error(e);
+      alert('Import fehlgeschlagen');
+    }
+  };
+  reader.readAsText(file);
+};
 
       const deleteAssembly = function(pl, asm){
         if (!pl||!asm) return;
