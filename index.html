@@ -266,6 +266,36 @@
       const [qty, setQty] = useState(1);
       const [alsoDeleteItemsFlag, setAlsoDeleteItemsFlag] = useState(true);
       const [lastDeletion, setLastDeletion] = useState(null);
+
+      function resetMasterToStart(){
+  if (!confirm('Stammdaten auf Startdaten zurücksetzen? (Liste bleibt erhalten)')) return;
+  const base = normalizeData(START_DATA);
+  setDataRaw(base);
+  const firstPl = Object.keys(base)[0] || '';
+  const firstAsm = firstPl ? Object.keys(base[firstPl].assemblies||{})[0] || '' : '';
+  setPlSel(firstPl); setAsmSel(firstAsm);
+  alert('Stammdaten auf Startdaten gesetzt.');
+}
+
+function clearMaster(){
+  if (!confirm('Stammdaten komplett leeren? (Liste bleibt erhalten)')) return;
+  setDataRaw({});
+  setPlSel(''); setAsmSel('');
+  alert('Stammdaten gelöscht.');
+}
+
+function factoryResetAll(){
+  if (!confirm('ALLE Daten löschen (Stammdaten, Liste, Datum)?')) return;
+  const base = normalizeData(START_DATA);
+  setDataRaw(base);
+  setItems([]);
+  const t = todayISO();
+  setDateISO(t); setDateText(fmtDEfromISO(t));
+  setPlSel(Object.keys(base)[0]||'');
+  setAsmSel(Object.keys(base[Object.keys(base)[0]]?.assemblies||{})[0]||'');
+  alert('Werkseinstellungen hergestellt.');
+}
+
       // --- Manuelles Hinzufügen ---
 const [mPl,  setMPl]  = useState('');
 const [mAsm, setMAsm] = useState('');
@@ -856,6 +886,18 @@ function onManualSave(){
           </Section>
 
           <PWASection/>
+
+          <Section title="Zurücksetzen">
+  <div className="flex flex-wrap gap-2">
+    <Danger onClick={resetMasterToStart}>Stammdaten → Startdaten</Danger>
+    <Danger onClick={clearMaster}>Stammdaten leeren</Danger>
+    <Ghost  onClick={factoryResetAll}>Werkseinstellungen (alles löschen)</Ghost>
+  </div>
+  <p className="text-xs text-slate-500 mt-2">
+    Hinweis: „Stammdaten leeren/Startdaten“ lässt die aktuelle Liste unangetastet. „Werkseinstellungen“ löscht zusätzlich alle Listeneinträge & setzt das Datum neu.
+  </p>
+</Section>
+          
 
           <Section title="Diagnose">
             <div className="flex flex-wrap gap-2 items-center">
