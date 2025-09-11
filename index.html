@@ -1,12 +1,14 @@
-<script>
-// <-- HIER GANZ OBEN EINFÜGEN
-function dequote(v) {
-  return String(v ?? '').trim().replace(/^["\u201C\u201D]|["\u201C\u201D]$/g, '');
-}
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <script>
+    function dequote(v) {
+      return String(v ?? '').trim().replace(/^["\u201C\u201D]|["\u201C\u201D]$/g,'');
+    }
+  </script>
+  <!-- ... der Rest (Tailwind, React etc.) -->
 
-// ... dein bestehender Code
-// später in diesem Block kommt dann lines.forEach(...) mit split(line)
-</script>
 
 <!doctype html>
 <html lang="de">
@@ -54,7 +56,7 @@ function dequote(v) {
   <script type="text/babel" data-presets="react,typescript" data-plugins="proposal-optional-chaining,proposal-nullish-coalescing-operator">
     const { useEffect, useState, useMemo } = React;
 
-    // IndexedDB Helper (ohne async/await)
+ // IndexedDB Helper (ohne async/await)
     const IDB = (function(){
       const support = typeof indexedDB !== 'undefined';
       var dbp = null;
@@ -970,6 +972,30 @@ function onManualSave(){
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<ErrorBoundary><App/></ErrorBoundary>);
   </script>
+
+  </script> <!-- ← Ende deines text/babel-Blocks -->
+
+<script>
+  // Minimal-Diagnose
+  window.addEventListener('error', e => {
+    console.error('Global JS error:', e.message, e.filename, e.lineno, e.colno, e.error);
+  });
+  window.addEventListener('unhandledrejection', e => {
+    console.error('Unhandled promise rejection:', e.reason);
+  });
+  console.log('Diagnostics hooked: Babel-App geladen, gleich sollte React booten…');
+</script>
+
+<!-- Danach wie gehabt der Service Worker -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker
+        .register('./sw.js')
+        .catch(function (e) { console.warn('SW-Registrierung fehlgeschlagen:', e); });
+    });
+  }
+</script>
 
   <!-- Service Worker registrieren -->
  <script>
