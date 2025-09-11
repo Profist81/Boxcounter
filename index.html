@@ -1,3 +1,13 @@
+<script>
+// <-- HIER GANZ OBEN EINFÜGEN
+function dequote(v) {
+  return String(v ?? '').trim().replace(/^["\u201C\u201D]|["\u201C\u201D]$/g, '');
+}
+
+// ... dein bestehender Code
+// später in diesem Block kommt dann lines.forEach(...) mit split(line)
+</script>
+
 <!doctype html>
 <html lang="de">
 <head>
@@ -94,54 +104,91 @@
     function parseCSV(text){
   var raw0 = String(text||'');
   if (!raw0.trim()) return [];
+
   // Zeilen vereinheitlichen
   var raw = raw0.replace(/^\uFEFF/, '') // BOM
-                .replace(/\r/g,'').replace(/\\r/g,'')
-                .replace(/\\n/g,'\n').replace(/[\u2028\u2029]/g,'\n').trim();
+                .replace(/\r/g,'')
+                .replace(/\\r/g,'')
+                .replace(/\\n/g,'\n')
+                .replace(/[\u2028\u2029]/g,'\n')
+                .trim();
+
   var lines = raw.split(/\n+/);
   if (!lines.length) return [];
 
   // Trennzeichen , ; oder Tab
   var split = (line)=> line.split(/\s*[,;\t]\s*/);
 
-  // Kopfzeile erkennen – falls die erste Zeile „wie Daten“ aussieht, behandeln wir sie als Daten
+  // Kopfzeile erkennen
   var headerParts = split(lines[0]||'').map(s=>s.trim().toLowerCase());
   var looksLikeHeader =
-    headerParts.some(s => /artikel|baugruppe|bauteil|max|teile|gib|product|assembly/.test(s));
-  if (!looksLikeHeader) {
-    // künstliche Standard-Kopfzeile anlegen: [Artikelnummer;Baugruppe;Bauteil;Teile]
-    headerParts = ['artikelnummer','baugruppe','bauteil','teile'];
-  } else {
+    headerParts.some(s => /artikel|baugruppe|bauteil|max|product|assembly|line/.test(s));
+  if (looksLikeHeader) {
     lines.shift(); // echte Kopfzeile entfernen
+  } else {
+    headerParts = ['artikelnummer','produktlinie','baugruppe','max_per_box'];
   }
 
-  // Indizes suchen
+  // Index-Helfer
   const idx = (re)=> headerParts.findIndex(c=>re.test(c));
   let idxArt = idx(/artikel\s*(nr|nummer)?|art[\.\s_-]*nr|article/);
   let idxPL  = idx(/produktlinie|product\s*line|^pl$/);
   let idxBG  = idx(/^baugruppe$|assembly|^bg$/);
   let idxBT  = idx(/bauteil|komponente|teilbezeichnung/);
-  let idxMax = idx(/max[_\s]*per[_\s]*box|maxjegebinde|pro\s*gebinde|teile\s*in\s*gib|teile(?:\s*je)?\s*gebinde|menge\s*(je|pro)\s*gebinde|teile$/);
+  let idxMax = idx(/max[_\s]*per[_\s]*box|max|pro\s*gebinde|menge/);
 
-  // Wenn nichts gefunden wurde: Positions-Fallback (0: ArtNr, 1: Baugruppe→Produktlinie, 2: Bauteil→Assembly, letzte Spalte: Max/Teile)
+  // Fallbacks
   if (idxArt<0) idxArt = 0;
   if (idxPL<0 && idxBG<0) idxBG = 1;
   if (idxBT<0) idxBT = 2;
   if (idxMax<0) idxMax = headerParts.length-1;
 
-  // Mapping: Produktlinie = PL (sonst BG), Assembly = BT (sonst BG)
-  const idxProdline = (idxPL>=0) ? idxPL : idxBG;
-  const idxAssembly = (idxBT>=0) ? idxBT : idxBG;
+  const idxProdline = (idxPL>=0) ? idxPL : idxBG; // PL aus PL oder BG
+  const idxAssembly = (idxBT>=0) ? idxBT : idxBG; // ASM aus BT oder BG
 
   const rows = [];
-  lines.forEach(line=>{
+  lines.forEach((line)=>{
     if (!line.trim()) return;
-    const parts = split(line);
 
-    const pl  = (parts[idxProdline]||'').trim();
-    const asm = (parts[idxAssembly]||'').trim();
-    const art = (parts[idxArt]||'').trim();
-    const maxRaw = String(parts[idxMax]||'').trim();   // z.B. "K", "P", "30/30", "20"
+    // Teile dequoten
+    const parts = split(line).map(s => dequote(s));
+
+    const pl  = dequote(parts[idxProdline] ?? '');
+    const asm = dequote(parts[idxAssembly] ?? '');
+    const art = dequote(parts[idxArt] ?? '');
+
+    // Max: Label (für Anzeige) + Zahl (für Logik)
+    const maxLabel = dequote(parts[idxMax] ?? '');    // z.B. 20, K, 30/30
+    const m = maxLabel.match(/\d+/);                  // erste Zahl
+    const max_per_box = m ? parseInt(m[0], 10) : 1;   // Fallback 1
+
+    if (!pl || !asm) return;
+
+    rows.push({
+      produktlinie: pl,
+      baugruppe: asm,
+      artikelnummer: art,
+      max_per_box,
+      max_label: maxLabel || String(max_per_box)
+    });
+  });
+
+  return rows;
+}
+
+  // Beim Push sicherstellen, dass wir beides speichern:
+- rows.push({ product_line: pl, assembly: asm, article_no: art });
++ rows.push({ product_line: pl, assembly: asm, article_no: art, max_per_box, max_label: dequote(parts[idxMax] ?? '') });
+
++
++  // Max-Wert säubern -> nur Ziffern nehmen, Zahl herstellen, Fallback 1
++  const maxStr = dequote(parts[idxMax] ?? '').replace(/[^\d-]/g, '');
++  const max_per_box = Number.parseInt(maxStr, 10) > 0 ? Number.parseInt(maxStr, 10) : 1;
+
+   // ... hier dein rows.push(...)
+-  rows.push({ product_line: pl, assembly: asm, article_no: art /*, max_per_box: ??? */});
++  rows.push({ product_line: pl, assembly: asm, article_no: art, max_per_box });
+ });
 
     // numerischer Fallback NUR intern, Label bleibt 1:1 erhalten
     const num = Number(maxRaw.replace(',', '.'));
@@ -925,12 +972,15 @@ function onManualSave(){
   </script>
 
   <!-- Service Worker registrieren -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function(){
-        navigator.serviceWorker.register('./sw.js').catch(function(e){ console.warn('SW-Registrierung fehlgeschlagen:', e); });
-      });
-    }
-  </script>
+ <script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker
+        .register('./sw.js')
+        .catch(function (e) { console.warn('SW-Registrierung fehlgeschlagen:', e); });
+    });
+  }
+</script>
+
 </body>
 </html>
