@@ -3,17 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <script>
-    function dequote(v) {
-      return String(v ?? '').trim().replace(/^["\u201C\u201D]|["\u201C\u201D]$/g,'');
-    }
-  </script>
-  <!-- ... der Rest (Tailwind, React etc.) -->
+  function dequote(v){
+    return String(v ?? '').trim().replace(/^["\u201C\u201D]|["\u201C\u201D]$/g,'');
+  }
+</script>
 
-
-<!doctype html>
-<html lang="de">
-<head>
-  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <!-- PWA manifest + iOS meta -->
   <link id="manifest-link" rel="manifest" href="./manifest.webmanifest">
@@ -973,8 +967,6 @@ function onManualSave(){
     root.render(<ErrorBoundary><App/></ErrorBoundary>);
   </script>
 
-  </script> <!-- ← Ende deines text/babel-Blocks -->
-
 <script>
   // Minimal-Diagnose
   window.addEventListener('error', e => {
@@ -985,18 +977,7 @@ function onManualSave(){
   });
   console.log('Diagnostics hooked: Babel-App geladen, gleich sollte React booten…');
 </script>
-
-<!-- Danach wie gehabt der Service Worker -->
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function () {
-      navigator.serviceWorker
-        .register('./sw.js')
-        .catch(function (e) { console.warn('SW-Registrierung fehlgeschlagen:', e); });
-    });
-  }
-</script>
-
+  
   <!-- Service Worker registrieren -->
  <script>
   if ('serviceWorker' in navigator) {
