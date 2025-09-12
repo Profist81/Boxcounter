@@ -2,22 +2,19 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <script>
-  function dequote(v){
-    return String(v ?? '').trim().replace(/^["\u201C\u201D]|["\u201C\u201D]$/g,'');
-  }
-</script>
-
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-  <!-- PWA manifest + iOS meta -->
+
+  <!-- PWA manifest -->
   <link id="manifest-link" rel="manifest" href="./manifest.webmanifest">
+
   <meta name="theme-color" content="#4f46e5">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
-  <title>BoxCounterMini v46 – Smartphone HTML (PWA + IndexedDB)</title>
 
-  <!-- Tailwind (Play CDN) -->
+  <title>BoxCounterMini – Smartphone HTML (PWA + IndexedDB)</title>
+
+  <!-- Tailwind (nur für Dev; Prod später via Build) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -34,33 +31,41 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-  <!-- Babel Standalone -->
+  <!-- Babel Standalone (nur Dev) -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- jsPDF für PDF-Export -->
+  <!-- jsPDF (Export) + regenerator-runtime (Safari Fix) -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <!-- Fix für Safari/In‑App: regenerator-runtime -->
   <script src="https://unpkg.com/regenerator-runtime@0.14.1/runtime.js"></script>
 
   <style>html, body { background: #0f172a0d; }</style>
+
+  <!-- Hilfsfunktion: störende Anführungszeichen ( " „ ” ) am Anfang/Ende entfernen -->
+  <script>
+    function dequote(v){
+      return String(v ?? '').trim().replace(/^["\u201C\u201D]|["\u201C\u201D]$/g, '');
+    }
+  </script>
 </head>
+
 <body class="min-h-screen text-slate-900">
   <div id="root"></div>
 
+  <!-- App -->
   <script type="text/babel" data-presets="react,typescript" data-plugins="proposal-optional-chaining,proposal-nullish-coalescing-operator">
     const { useEffect, useState, useMemo } = React;
 
- // IndexedDB Helper (ohne async/await)
+    // ---------- IndexedDB Helper (ohne async/await) ----------
     const IDB = (function(){
       const support = typeof indexedDB !== 'undefined';
-      var dbp = null;
+      let dbp = null;
       function open(){
         if (!support) return Promise.reject(new Error('no idb'));
         if (dbp) return dbp;
         dbp = new Promise(function(resolve, reject){
-          var req = indexedDB.open('bcm-db', 1);
+          const req = indexedDB.open('bcm-db', 1);
           req.onupgradeneeded = function(){
-            var db = req.result;
+            const db = req.result;
             if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
           };
           req.onsuccess = function(){ resolve(req.result); };
@@ -71,172 +76,133 @@
       function get(key){
         return open().then(function(db){
           return new Promise(function(res,rej){
-            var tx=db.transaction('kv','readonly'); var st=tx.objectStore('kv');
-            var r=st.get(key); r.onsuccess=function(){res(r.result)}; r.onerror=function(){rej(r.error)};
+            const tx=db.transaction('kv','readonly'); const st=tx.objectStore('kv');
+            const r=st.get(key); r.onsuccess=function(){res(r.result)}; r.onerror=function(){rej(r.error)};
           });
         });
       }
       function set(key, val){
         return open().then(function(db){
           return new Promise(function(res,rej){
-            var tx=db.transaction('kv','readwrite'); var st=tx.objectStore('kv');
-            var r=st.put(val, key); r.onsuccess=function(){res(true)}; r.onerror=function(){rej(r.error)};
+            const tx=db.transaction('kv','readwrite'); const st=tx.objectStore('kv');
+            const r=st.put(val, key); r.onsuccess=function(){res(true)}; r.onerror=function(){rej(r.error)};
           });
         });
       }
       return { support, open, get, set };
     })();
 
-    const uid = function(){ return Math.random().toString(36).slice(2)+Date.now().toString(36); };
-    const titleCase = function(s){ return (s||'').trim().replace(/\s+/g,' ').toLowerCase().split(' ').map(function(w){ return w.charAt(0).toUpperCase()+w.slice(1); }).join(' '); };
-    const normalizeName = function(s){ return titleCase(String(s||'').trim()); };
-    const todayISO = function(){ return new Date().toISOString().slice(0,10); };
-    const fmtDEfromISO = function(iso){ if (!iso) return ''; var a=String(iso).split('-'); if (a.length!==3) return iso; return a[2]+'.'+a[1]+'.'+a[0]; };
-    const sumEntries = function(arr){ arr = arr||[]; return arr.reduce(function(a,b){ return a + (Number(b.qty)||0); }, 0); };
-    const dashTextFromEntries = function(arr){ arr=arr||[]; if (!arr.length) return '-'; return '-' + arr.map(function(x){return String(x.qty)}).join('-') + '-'; };
-    const downloadFile = function(filename, text, type){ type = type||'text/plain'; var blob = new Blob([text], { type }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000); };
-    const copyText = function(text){ try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); return true; } } catch(e) {} var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.style.position='fixed'; ta.style.opacity='0'; ta.select(); document.execCommand('copy'); document.body.removeChild(ta); return true; };
+    // ---------- Utils ----------
+    const uid = () => Math.random().toString(36).slice(2)+Date.now().toString(36);
+    const titleCase = s => (s||'').trim().replace(/\s+/g,' ').toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+    const normalizeName = s => titleCase(String(s||'').trim());
+    const todayISO = () => new Date().toISOString().slice(0,10);
+    const fmtDEfromISO = iso => { if (!iso) return ''; const a=String(iso).split('-'); return a.length===3 ? (a[2]+'.'+a[1]+'.'+a[0]) : iso; };
+    const sumEntries = arr => (arr||[]).reduce((a,b) => a + (Number(b.qty)||0), 0);
+    const dashTextFromEntries = arr => {arr=arr||[]; return arr.length? ('-'+arr.map(x=>String(x.qty)).join('-')+'-') : '-';};
+    const downloadFile = (filename, text, type='text/plain') => { const blob = new Blob([text], {type}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); };
+    const copyText = text => { try{ if(navigator.clipboard?.writeText){ navigator.clipboard.writeText(text); return true; } }catch(_){} const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.style.position='fixed'; ta.style.opacity='0'; ta.select(); document.execCommand('copy'); document.body.removeChild(ta); return true; };
 
+    // ---------- CSV Parser (robust) ----------
     function parseCSV(text){
-  var raw0 = String(text||'');
-  if (!raw0.trim()) return [];
+      const raw0 = String(text||'');
+      if (!raw0.trim()) return [];
 
-  // Zeilen vereinheitlichen
-  var raw = raw0.replace(/^\uFEFF/, '') // BOM
-                .replace(/\r/g,'')
-                .replace(/\\r/g,'')
-                .replace(/\\n/g,'\n')
-                .replace(/[\u2028\u2029]/g,'\n')
-                .trim();
+      const raw = raw0
+        .replace(/^\uFEFF/, '')     // BOM
+        .replace(/\r/g,'')
+        .replace(/\\r/g,'')
+        .replace(/\\n/g,'\n')
+        .replace(/[\u2028\u2029]/g,'\n')
+        .trim();
 
-  var lines = raw.split(/\n+/);
-  if (!lines.length) return [];
+      const lines = raw.split(/\n+/);
+      if (!lines.length) return [];
 
-  // Trennzeichen , ; oder Tab
-  var split = (line)=> line.split(/\s*[,;\t]\s*/);
+      const split = line => line.split(/\s*[,;\t]\s*/);
 
-  // Kopfzeile erkennen
-  var headerParts = split(lines[0]||'').map(s=>s.trim().toLowerCase());
-  var looksLikeHeader =
-    headerParts.some(s => /artikel|baugruppe|bauteil|max|product|assembly|line/.test(s));
-  if (looksLikeHeader) {
-    lines.shift(); // echte Kopfzeile entfernen
-  } else {
-    headerParts = ['artikelnummer','produktlinie','baugruppe','max_per_box'];
-  }
+      // Kopfzeile erkennen
+      let headerParts = split(lines[0]||'').map(s=>s.trim().toLowerCase());
+      const looksLikeHeader = headerParts.some(s => /artikel|baugruppe|bauteil|max|product|assembly|line/.test(s));
+      if (looksLikeHeader) lines.shift(); else headerParts = ['artikelnummer','produktlinie','baugruppe','max_per_box'];
 
-  // Index-Helfer
-  const idx = (re)=> headerParts.findIndex(c=>re.test(c));
-  let idxArt = idx(/artikel\s*(nr|nummer)?|art[\.\s_-]*nr|article/);
-  let idxPL  = idx(/produktlinie|product\s*line|^pl$/);
-  let idxBG  = idx(/^baugruppe$|assembly|^bg$/);
-  let idxBT  = idx(/bauteil|komponente|teilbezeichnung/);
-  let idxMax = idx(/max[_\s]*per[_\s]*box|max|pro\s*gebinde|menge/);
+      const idx = re => headerParts.findIndex(c=>re.test(c));
+      let idxArt = idx(/artikel\s*(nr|nummer)?|art[\.\s_-]*nr|article/);
+      let idxPL  = idx(/produktlinie|product\s*line|^pl$/);
+      let idxBG  = idx(/^baugruppe$|assembly|^bg$/);
+      let idxBT  = idx(/bauteil|komponente|teilbezeichnung/);
+      let idxMax = idx(/max[_\s]*per[_\s]*box|max|pro\s*gebinde|menge/);
 
-  // Fallbacks
-  if (idxArt<0) idxArt = 0;
-  if (idxPL<0 && idxBG<0) idxBG = 1;
-  if (idxBT<0) idxBT = 2;
-  if (idxMax<0) idxMax = headerParts.length-1;
+      if (idxArt<0) idxArt = 0;
+      if (idxPL<0 && idxBG<0) idxBG = 1;
+      if (idxBT<0) idxBT = 2;
+      if (idxMax<0) idxMax = headerParts.length-1;
 
-  const idxProdline = (idxPL>=0) ? idxPL : idxBG; // PL aus PL oder BG
-  const idxAssembly = (idxBT>=0) ? idxBT : idxBG; // ASM aus BT oder BG
+      const idxProdline = (idxPL>=0) ? idxPL : idxBG;
+      const idxAssembly = (idxBT>=0) ? idxBT : idxBG;
 
-  const rows = [];
-  lines.forEach((line)=>{
-    if (!line.trim()) return;
+      const rows = [];
+      lines.forEach(line=>{
+        if (!line.trim()) return;
+        const parts = split(line).map(s => dequote(s));
 
-    // Teile dequoten
-    const parts = split(line).map(s => dequote(s));
+        const pl  = dequote(parts[idxProdline] ?? '');
+        const asm = dequote(parts[idxAssembly] ?? '');
+        const art = dequote(parts[idxArt] ?? '');
 
-    const pl  = dequote(parts[idxProdline] ?? '');
-    const asm = dequote(parts[idxAssembly] ?? '');
-    const art = dequote(parts[idxArt] ?? '');
+        const maxLabel = dequote(parts[idxMax] ?? ''); // kann 20, K, 30/30 etc. sein
+        const m = maxLabel.match(/\d+/);
+        const max_per_box = m ? parseInt(m[0], 10) : 1; // Fallback 1
 
-    // Max: Label (für Anzeige) + Zahl (für Logik)
-    const maxLabel = dequote(parts[idxMax] ?? '');    // z.B. 20, K, 30/30
-    const m = maxLabel.match(/\d+/);                  // erste Zahl
-    const max_per_box = m ? parseInt(m[0], 10) : 1;   // Fallback 1
-
-    if (!pl || !asm) return;
-
-    rows.push({
-      produktlinie: pl,
-      baugruppe: asm,
-      artikelnummer: art,
-      max_per_box,
-      max_label: maxLabel || String(max_per_box)
-    });
-  });
-
-  return rows;
-}
-
-  // Beim Push sicherstellen, dass wir beides speichern:
-- rows.push({ product_line: pl, assembly: asm, article_no: art });
-+ rows.push({ product_line: pl, assembly: asm, article_no: art, max_per_box, max_label: dequote(parts[idxMax] ?? '') });
-
-+
-+  // Max-Wert säubern -> nur Ziffern nehmen, Zahl herstellen, Fallback 1
-+  const maxStr = dequote(parts[idxMax] ?? '').replace(/[^\d-]/g, '');
-+  const max_per_box = Number.parseInt(maxStr, 10) > 0 ? Number.parseInt(maxStr, 10) : 1;
-
-   // ... hier dein rows.push(...)
--  rows.push({ product_line: pl, assembly: asm, article_no: art /*, max_per_box: ??? */});
-+  rows.push({ product_line: pl, assembly: asm, article_no: art, max_per_box });
- });
-
-    // numerischer Fallback NUR intern, Label bleibt 1:1 erhalten
-    const num = Number(maxRaw.replace(',', '.'));
-    const maxNum = (isFinite(num) && !isNaN(num)) ? Math.max(1, num) : 20;
-
-    // nur gültige Kombinationen übernehmen
-    if (pl && asm) {
-      rows.push({
-        produktlinie: pl,
-        baugruppe:    asm,
-        artikelnummer: art,
-        max_per_box:   maxNum,
-        max_label:     maxRaw || String(maxNum)
+        if (!pl || !asm) return;
+        rows.push({
+          produktlinie: pl,
+          baugruppe: asm,
+          artikelnummer: art,
+          max_per_box,
+          max_label: maxLabel || String(max_per_box)
+        });
       });
+
+      return rows;
     }
-  });
 
-  return rows;
-}
-
+    // ---------- Startdaten ----------
     const START_DATA = {
       'Salsa': { assemblies: {
-        'Untergestell': { article_no: '57-90-10', max_per_box: 20 },
-        'Rückenteil':   { article_no: '57-90-12', max_per_box: 15 },
-        'Armstützenbügel': { article_no: '', max_per_box: 30 },
+        'Untergestell': { article_no: '57-90-10', max_per_box: 20, max_label: '20' },
+        'Rückenteil':   { article_no: '57-90-12', max_per_box: 15, max_label: '15' },
+        'Armstützenbügel': { article_no: '', max_per_box: 30, max_label: '30' },
       }},
       'Sensai': { assemblies: {
-        'Rückenteil':   { article_no: '61-90-01-V4', max_per_box: 25 }
+        'Rückenteil':   { article_no: '61-90-01-V4', max_per_box: 25, max_label: '25' }
       }},
     };
 
-   function normalizeData(raw){
-  var out = {}; var source = raw && typeof raw === 'object' ? raw : {};
-  Object.keys(source).forEach(function(plKey){
-    var plN = normalizeName(plKey);
-    out[plN] = out[plN] || { assemblies: {} };
-    var asmObj = (source[plKey] && source[plKey].assemblies) || {};
-    Object.keys(asmObj).forEach(function(asmKey){
-      var asmN = normalizeName(asmKey);
-      var val  = asmObj[asmKey] || {};
-      var prev = out[plN].assemblies[asmN] || {};
-      out[plN].assemblies[asmN] = {
-        article_no: (val.article_no != null ? val.article_no : (prev.article_no != null ? prev.article_no : '')).trim(),
-        max_per_box: Math.max(1, Number(val.max_per_box || prev.max_per_box || 20)),
-        max_label: (val.max_label != null ? String(val.max_label) :
-                   (prev.max_label != null ? String(prev.max_label) : String(val.max_per_box || prev.max_per_box || '')))
-      };
-    });
-  });
-  return out;
-}
+    // ---------- Normalisierung ----------
+    function normalizeData(raw){
+      const out = {}; const source = raw && typeof raw === 'object' ? raw : {};
+      Object.keys(source).forEach(plKey=>{
+        const plN = normalizeName(plKey);
+        out[plN] = out[plN] || { assemblies: {} };
+        const asmObj = (source[plKey] && source[plKey].assemblies) || {};
+        Object.keys(asmObj).forEach(asmKey=>{
+          const asmN = normalizeName(asmKey);
+          const val  = asmObj[asmKey] || {};
+          const prev = out[plN].assemblies[asmN] || {};
+          out[plN].assemblies[asmN] = {
+            article_no: String(val.article_no ?? prev.article_no ?? '').trim(),
+            max_per_box: Math.max(1, Number(val.max_per_box ?? prev.max_per_box ?? 20)),
+            max_label: String(
+              val.max_label ?? prev.max_label ?? (val.max_per_box ?? prev.max_per_box ?? '')
+            )
+          };
+        });
+      });
+      return out;
+    }
 
+    // ---------- Error Boundary ----------
     class ErrorBoundary extends React.Component{
       constructor(p){ super(p); this.state={err:null}; }
       componentDidCatch(err,info){ this.setState({err}); console.error('UI error:', err, info); }
@@ -250,153 +216,123 @@
       ); } return this.props.children; }
     }
 
-    const Section = function({title, children, right}){
-      return (
-        <section className="bg-white rounded-2xl shadow-soft p-4 sm:p-6 mb-4 overflow-hidden">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg sm:text-xl font-semibold">{title}</h2>
-            {right}
-          </div>
-          {children}
-        </section>
-      );
-    };
+    // ---------- UI Bausteine ----------
+    const Section = ({title, children, right}) => (
+      <section className="bg-white rounded-2xl shadow-soft p-4 sm:p-6 mb-4 overflow-hidden">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg sm:text-xl font-semibold">{title}</h2>
+          {right}
+        </div>
+        {children}
+      </section>
+    );
 
-    const Button = function({children, onClick, disabled, variant='primary', className=''}){
-      return (
-        <button onClick={onClick} disabled={disabled}
-          className={
-            "px-4 py-3 rounded-xl text-sm font-medium active:scale-[.99] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white flex-none " +
-            (variant==='primary' ? "bg-indigo-600 text-white disabled:bg-indigo-300 " :
-             variant==='ghost'   ? "bg-slate-100 text-slate-800 hover:bg-slate-200 disabled:opacity-60 " :
-             variant==='danger'  ? "bg-rose-600 text-white disabled:bg-rose-300 " :
-             "bg-slate-100 text-slate-800 ") + className
-          }>
-          {children}
-        </button>
-      );
-    };
-    const Ghost = function(p){ return <Button {...p} variant="ghost"/> };
-    const Danger = function(p){ return <Button {...p} variant="danger"/> };
+    const Button = ({children, onClick, disabled, variant='primary', className=''}) => (
+      <button onClick={onClick} disabled={disabled}
+        className={
+          "px-4 py-3 rounded-xl text-sm font-medium active:scale-[.99] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white flex-none " +
+          (variant==='primary' ? "bg-indigo-600 text-white disabled:bg-indigo-300 " :
+           variant==='ghost'   ? "bg-slate-100 text-slate-800 hover:bg-slate-200 disabled:opacity-60 " :
+           variant==='danger'  ? "bg-rose-600 text-white disabled:bg-rose-300 " :
+           "bg-slate-100 text-slate-800 ") + className
+        }>
+        {children}
+      </button>
+    );
+    const Ghost = p => <Button {...p} variant="ghost"/>;
+    const Danger = p => <Button {...p} variant="danger"/>;
 
-    function PWASection(){
-      return (
-        <Section title="PWA – Installationsdateien (für Startbildschirm/Offline)">
-          <p className="text-sm text-slate-600 mb-3">Lade diese Dateien herunter und lege sie auf deinem Webspace ab:
-            <code className="ml-1">./manifest.webmanifest</code>, <code>./sw.js</code>, <code>./icons/icon-192.png</code>, <code>./icons/icon-512.png</code>.</p>
-          <div className="flex flex-wrap gap-2 mb-3">
-            <Ghost onClick={function(){window.__bcm_pwa.dlManifest()}}>manifest.webmanifest</Ghost>
-            <Ghost onClick={function(){window.__bcm_pwa.dlSW()}}>sw.js</Ghost>
-            <Ghost onClick={function(){window.__bcm_pwa.dlIcon192()}}>icon-192.png</Ghost>
-            <Ghost onClick={function(){window.__bcm_pwa.dlIcon512()}}>icon-512.png</Ghost>
-          </div>
-          <p className="text-xs text-slate-500">Hinweis: Service Worker funktionieren nur auf <b>HTTPS</b> oder <b>localhost</b>. In‑App‑Browser (z. B. WhatsApp) blockieren oft die Installation.</p>
-        </Section>
-      );
-    }
-
+    // ---------- App ----------
     function App(){
       const inApp = /WhatsApp|FBAN|FBAV|Instagram|Line\/|WeChat|WebView/i.test(navigator.userAgent);
+
       const [storeMode, setStoreMode] = useState('local');
       const [storeReady, setStoreReady] = useState(false);
-      const [autoBackup, setAutoBackup] = useState(function(){ try { return JSON.parse(localStorage.getItem('bcm:autoBackup')||'true'); } catch (e) { return true; } });
-      const [dataRaw, setDataRaw] = useState(function(){ try { return normalizeData(JSON.parse(localStorage.getItem('bcm:dataRaw'))||START_DATA);}catch(e){ return normalizeData(START_DATA);} });
-      const [items, setItems] = useState(function(){ try { return JSON.parse(localStorage.getItem('bcm:items'))||[];}catch(e){ return []; } });
-      const [dateISO, setDateISO] = useState(function(){ return localStorage.getItem('bcm:dateISO') || todayISO(); });
-      const [dateText, setDateText] = useState(function(){ return localStorage.getItem('bcm:dateText') || fmtDEfromISO(localStorage.getItem('bcm:dateISO')||todayISO()); });
-      const [plSel, setPlSel]   = useState(function(){ return Object.keys(dataRaw)[0]||''; });
-      const [asmSel, setAsmSel] = useState(function(){ var firstAsm = plSel && dataRaw[plSel] ? Object.keys(dataRaw[plSel].assemblies)[0] : ''; return firstAsm || ''; });
+      const [autoBackup, setAutoBackup] = useState(()=>{ try { return JSON.parse(localStorage.getItem('bcm:autoBackup')||'true'); } catch { return true; } });
+
+      const [dataRaw, setDataRaw] = useState(()=>{ try { return normalizeData(JSON.parse(localStorage.getItem('bcm:dataRaw'))||START_DATA);}catch{ return normalizeData(START_DATA);} });
+      const [items, setItems] = useState(()=>{ try { return JSON.parse(localStorage.getItem('bcm:items'))||[];}catch{ return []; } });
+
+      const [dateISO, setDateISO] = useState(()=> localStorage.getItem('bcm:dateISO') || todayISO());
+      const [dateText, setDateText] = useState(()=> localStorage.getItem('bcm:dateText') || fmtDEfromISO(localStorage.getItem('bcm:dateISO')||todayISO()));
+
+      const [plSel, setPlSel]   = useState(()=> Object.keys(dataRaw)[0]||'');
+      const [asmSel, setAsmSel] = useState(()=> { const firstAsm = plSel && dataRaw[plSel] ? Object.keys(dataRaw[plSel].assemblies)[0] : ''; return firstAsm || ''; });
+
       const [qty, setQty] = useState(1);
       const [alsoDeleteItemsFlag, setAlsoDeleteItemsFlag] = useState(true);
-      const [lastDeletion, setLastDeletion] = useState(null);
+      const [lastDeletion, setLastDeletion] = useState(null); // ← nur EINMAL deklariert
 
+      // Reset/Factory
       function resetMasterToStart(){
-  if (!confirm('Stammdaten auf Startdaten zurücksetzen? (Liste bleibt erhalten)')) return;
-  const base = normalizeData(START_DATA);
-  setDataRaw(base);
-  const firstPl = Object.keys(base)[0] || '';
-  const firstAsm = firstPl ? Object.keys(base[firstPl].assemblies||{})[0] || '' : '';
-  setPlSel(firstPl); setAsmSel(firstAsm);
-  alert('Stammdaten auf Startdaten gesetzt.');
-}
-
-function clearMaster(){
-  if (!confirm('Stammdaten komplett leeren? (Liste bleibt erhalten)')) return;
-  setDataRaw({});
-  setPlSel(''); setAsmSel('');
-  alert('Stammdaten gelöscht.');
-}
-
-function factoryResetAll(){
-  if (!confirm('ALLE Daten löschen (Stammdaten, Liste, Datum)?')) return;
-  const base = normalizeData(START_DATA);
-  setDataRaw(base);
-  setItems([]);
-  const t = todayISO();
-  setDateISO(t); setDateText(fmtDEfromISO(t));
-  setPlSel(Object.keys(base)[0]||'');
-  setAsmSel(Object.keys(base[Object.keys(base)[0]]?.assemblies||{})[0]||'');
-  alert('Werkseinstellungen hergestellt.');
-}
-
-      // --- Manuelles Hinzufügen ---
-const [mPl,  setMPl]  = useState('');
-const [mAsm, setMAsm] = useState('');
-const [mArt, setMArt] = useState('');
-const [mMax, setMMax] = useState(20);
-
-function onManualSave(){
-  const pl  = normalizeName(mPl||'').trim();
-  const asm = normalizeName(mAsm||'').trim();
-  const art = (mArt||'').trim();
-  const maxRaw = String(mMax).trim();                 // kann "K", "P", "30/30" etc. sein
-  const isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
-  const maxNum = isNum ? Math.max(1, Number(maxRaw)) : 20;
-
-  if (!pl || !asm) { alert('Produktlinie und Baugruppe sind Pflicht.'); return; }
-
-  setDataRaw(prev=>{
-    const next = JSON.parse(JSON.stringify(prev||{}));
-    next[pl] = next[pl] || { assemblies:{} };
-    const prevAsm = next[pl].assemblies[asm] || {};
-    next[pl].assemblies[asm] = {
-      article_no: (art || prevAsm.article_no || '').trim(),
-      max_per_box: maxNum,
-      max_label: maxRaw || prevAsm.max_label || String(maxNum)
-    };
-    return normalizeData(next);
-  });
-
-  setPlSel(pl); setAsmSel(asm);
-  setQty(maxRaw);            // Default auf das eingegebene Label
-  setMPl(''); setMAsm(''); setMArt(''); setMMax(20);
-  alert('Gespeichert.');
-}
-
-      const [testResults, setTestResults] = useState([]);
-
-      function runSelfTests(){
-        var results=[];
-        try { results.push({name:'regeneratorRuntime present', ok: typeof window!=='undefined' && !!window.regeneratorRuntime && typeof window.regeneratorRuntime.wrap==='function'}); } catch(e){ results.push({name:'regeneratorRuntime present', ok:false, err:String(e)}); }
-        try { results.push({name:'dashText empty', ok: dashTextFromEntries([])==='-'});} catch(e){ results.push({name:'dashText empty', ok:false, err:String(e)}); }
-        try { results.push({name:'dashText basic', ok: dashTextFromEntries([{qty:5},{qty:10}])==='-5-10-'});} catch(e){ results.push({name:'dashText basic', ok:false, err:String(e)}); }
-        try { var rows = parseCSV('produktlinie;baugruppe;artikelnummer;max_per_box\nSalsa;Untergestell;57-90-10;20'); results.push({name:'parseCSV row', ok: rows.length===1 && rows[0].produktlinie==='Salsa' && rows[0].baugruppe==='Untergestell'});} catch(e){ results.push({name:'parseCSV row', ok:false, err:String(e)}); }
-        try { var norm = normalizeData({'salsa':{assemblies:{'rückenteil':{article_no:'X',max_per_box:7}}}}); results.push({name:'normalizeData', ok: !!(norm.Salsa && norm.Salsa.assemblies['Rückenteil'] && norm.Salsa.assemblies['Rückenteil'].max_per_box===7)});} catch(e){ results.push({name:'normalizeData', ok:false, err:String(e)}); }
-        setTestResults(results);
+        if (!confirm('Stammdaten auf Startdaten zurücksetzen? (Liste bleibt erhalten)')) return;
+        const base = normalizeData(START_DATA);
+        setDataRaw(base);
+        const firstPl = Object.keys(base)[0] || '';
+        const firstAsm = firstPl ? Object.keys(base[firstPl].assemblies||{})[0] || '' : '';
+        setPlSel(firstPl); setAsmSel(firstAsm);
+        alert('Stammdaten auf Startdaten gesetzt.');
+      }
+      function clearMaster(){
+        if (!confirm('Stammdaten komplett leeren? (Liste bleibt erhalten)')) return;
+        setDataRaw({});
+        setPlSel(''); setAsmSel('');
+        alert('Stammdaten gelöscht.');
+      }
+      function factoryResetAll(){
+        if (!confirm('ALLE Daten löschen (Stammdaten, Liste, Datum)?')) return;
+        const base = normalizeData(START_DATA);
+        setDataRaw(base); setItems([]);
+        const t = todayISO(); setDateISO(t); setDateText(fmtDEfromISO(t));
+        setPlSel(Object.keys(base)[0]||'');
+        setAsmSel(Object.keys(base[Object.keys(base)[0]]?.assemblies||{})[0]||'');
+        alert('Werkseinstellungen hergestellt.');
       }
 
-      useEffect(function(){
+      // Manuell hinzufügen
+      const [mPl,setMPl]   = useState('');
+      const [mAsm,setMAsm] = useState('');
+      const [mArt,setMArt] = useState('');
+      const [mMax,setMMax] = useState(20);
+      function onManualSave(){
+        const pl  = normalizeName(mPl||'').trim();
+        const asm = normalizeName(mAsm||'').trim();
+        const art = (mArt||'').trim();
+        const maxRaw = String(mMax).trim();    // kann "K","P","30/30" etc. sein
+        const isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
+        const maxNum = isNum ? Math.max(1, Number(maxRaw)) : 20;
+        if (!pl || !asm) { alert('Produktlinie und Baugruppe sind Pflicht.'); return; }
+
+        setDataRaw(prev=>{
+          const next = JSON.parse(JSON.stringify(prev||{}));
+          next[pl] = next[pl] || { assemblies:{} };
+          const prevAsm = next[pl].assemblies[asm] || {};
+          next[pl].assemblies[asm] = {
+            article_no: (art || prevAsm.article_no || '').trim(),
+            max_per_box: maxNum,
+            max_label: maxRaw || prevAsm.max_label || String(maxNum)
+          };
+          return normalizeData(next);
+        });
+        setPlSel(pl); setAsmSel(asm);
+        setQty(maxRaw);
+        setMPl(''); setMAsm(''); setMArt(''); setMMax(20);
+        alert('Gespeichert.');
+      }
+
+      // Init Speicher
+      useEffect(()=>{
         if (!IDB.support) { setStoreMode('local'); setStoreReady(true); return; }
         IDB.open()
-          .then(function(){ setStoreMode('idb'); return IDB.get('dataRaw'); })
-          .then(function(existing){
+          .then(()=>{ setStoreMode('idb'); return IDB.get('dataRaw'); })
+          .then(existing=>{
             if (!existing) {
-              var lr = localStorage.getItem('bcm:dataRaw');
-              var li = localStorage.getItem('bcm:items');
-              var di = localStorage.getItem('bcm:dateISO');
-              var dt = localStorage.getItem('bcm:dateText');
-              var ab = localStorage.getItem('bcm:autoBackup');
-              var tasks = [];
+              const lr = localStorage.getItem('bcm:dataRaw');
+              const li = localStorage.getItem('bcm:items');
+              const di = localStorage.getItem('bcm:dateISO');
+              const dt = localStorage.getItem('bcm:dateText');
+              const ab = localStorage.getItem('bcm:autoBackup');
+              const tasks = [];
               if (lr) tasks.push(IDB.set('dataRaw', JSON.parse(lr)));
               if (li) tasks.push(IDB.set('items', JSON.parse(li)));
               if (di) tasks.push(IDB.set('dateISO', di));
@@ -405,9 +341,9 @@ function onManualSave(){
               return Promise.all(tasks);
             }
           })
-          .then(function(){ return Promise.all([ IDB.get('dataRaw'), IDB.get('items'), IDB.get('dateISO'), IDB.get('dateText'), IDB.get('autoBackupFlag') ]); })
-          .then(function(vals){
-            var dr = vals[0], it = vals[1], di2 = vals[2], dt2 = vals[3], abFlag = vals[4];
+          .then(()=> Promise.all([ IDB.get('dataRaw'), IDB.get('items'), IDB.get('dateISO'), IDB.get('dateText'), IDB.get('autoBackupFlag') ]))
+          .then(vals=>{
+            const [dr,it,di2,dt2,abFlag] = vals;
             if (dr) setDataRaw(normalizeData(dr));
             if (Array.isArray(it)) setItems(it);
             if (typeof di2==='string') setDateISO(di2);
@@ -415,178 +351,161 @@ function onManualSave(){
             if (typeof abFlag==='boolean') setAutoBackup(abFlag);
             setStoreReady(true);
           })
-          .catch(function(e){ console.warn('IDB init failed, fallback localStorage', e); setStoreMode('local'); setStoreReady(true); });
+          .catch(e=>{ console.warn('IDB init failed, fallback localStorage', e); setStoreMode('local'); setStoreReady(true); });
       }, []);
 
-      useEffect(function(){ try{ localStorage.setItem('bcm:dataRaw', JSON.stringify(dataRaw)); }catch(e){} if (storeMode==='idb') { IDB.set('dataRaw', dataRaw).catch(function(){}) } }, [dataRaw, storeMode]);
-      useEffect(function(){ try{ localStorage.setItem('bcm:items', JSON.stringify(items)); }catch(e){} if (storeMode==='idb') { IDB.set('items', items).catch(function(){}) } }, [items, storeMode]);
-      useEffect(function(){ try{ localStorage.setItem('bcm:dateISO', dateISO); }catch(e){} if (storeMode==='idb') { IDB.set('dateISO', dateISO).catch(function(){}) } }, [dateISO, storeMode]);
-      useEffect(function(){ try{ localStorage.setItem('bcm:dateText', dateText); }catch(e){} if (storeMode==='idb') { IDB.set('dateText', dateText).catch(function(){}) } }, [dateText, storeMode]);
-      useEffect(function(){ try{ localStorage.setItem('bcm:autoBackup', JSON.stringify(autoBackup)); }catch(e){} if (storeMode==='idb') { IDB.set('autoBackupFlag', autoBackup).catch(function(){}) } }, [autoBackup, storeMode]);
+      // Persist
+      useEffect(()=>{ try{ localStorage.setItem('bcm:dataRaw', JSON.stringify(dataRaw)); }catch{} if (storeMode==='idb') { IDB.set('dataRaw', dataRaw).catch(()=>{}) } }, [dataRaw, storeMode]);
+      useEffect(()=>{ try{ localStorage.setItem('bcm:items', JSON.stringify(items)); }catch{} if (storeMode==='idb') { IDB.set('items', items).catch(()=>{}) } }, [items, storeMode]);
+      useEffect(()=>{ try{ localStorage.setItem('bcm:dateISO', dateISO); }catch{} if (storeMode==='idb') { IDB.set('dateISO', dateISO).catch(()=>{}) } }, [dateISO, storeMode]);
+      useEffect(()=>{ try{ localStorage.setItem('bcm:dateText', dateText); }catch{} if (storeMode==='idb') { IDB.set('dateText', dateText).catch(()=>{}) } }, [dateText, storeMode]);
+      useEffect(()=>{ try{ localStorage.setItem('bcm:autoBackup', JSON.stringify(autoBackup)); }catch{} if (storeMode==='idb') { IDB.set('autoBackupFlag', autoBackup).catch(()=>{}) } }, [autoBackup, storeMode]);
 
-      useEffect(function(){
-  var asms = plSel && dataRaw[plSel] ? Object.keys(dataRaw[plSel].assemblies) : [];
-  var nextAsm = asms[0]||'';
-  setAsmSel(nextAsm);
-  var entry = nextAsm ? (dataRaw[plSel]?.assemblies?.[nextAsm] || null) : null;
-  var mpb   = entry ? (entry.max_per_box || 20) : 20;
-  var label = entry ? (entry.max_label || '') : '';
-  // Wenn label nicht rein numerisch ist, als Default übernehmen (z.B. "K", "P", "30/30")
-  setQty(label && !/^\d+(\.\d+)?$/.test(label) ? label : mpb);
-}, [plSel, dataRaw]);
+      // Auswahländerung -> Default Menge
+      useEffect(()=>{
+        const asms = plSel && dataRaw[plSel] ? Object.keys(dataRaw[plSel].assemblies) : [];
+        const nextAsm = asms[0]||'';
+        setAsmSel(nextAsm);
+        const entry = nextAsm ? (dataRaw[plSel]?.assemblies?.[nextAsm] || null) : null;
+        const mpb   = entry ? (entry.max_per_box || 20) : 20;
+        const label = entry ? (entry.max_label || '') : '';
+        setQty(label && !/^\d+(\.\d+)?$/.test(label) ? label : mpb);
+      }, [plSel, dataRaw]);
 
-      const maxForCurrent = useMemo(function(){
+      const maxForCurrent = useMemo(()=>{
         if (!plSel || !asmSel) return 20;
-        var it = dataRaw[plSel] && dataRaw[plSel].assemblies ? dataRaw[plSel].assemblies[asmSel] : null;
+        const it = dataRaw[plSel]?.assemblies?.[asmSel] || null;
         return it ? it.max_per_box : 20;
       }, [plSel, asmSel, dataRaw]);
 
-      useEffect(function(){ if (qty>maxForCurrent) setQty(maxForCurrent); if (qty<1) setQty(1); }, [maxForCurrent]);
+      useEffect(()=>{ if (typeof qty==='number') { if (qty>maxForCurrent) setQty(maxForCurrent); if (qty<1) setQty(1); } }, [maxForCurrent]);
 
-      const findGreen = function(pl, asm){ return items.find(function(it){ return it.pl===pl && it.asm===asm && it.written; }); };
-      const findDraft = function(pl, asm){ return items.find(function(it){ return it.pl===pl && it.asm===asm && !it.written; }); };
+      const findGreen = (pl, asm)=> items.find(it=> it.pl===pl && it.asm===asm && it.written);
+      const findDraft = (pl, asm)=> items.find(it=> it.pl===pl && it.asm===asm && !it.written);
 
-      const onAddEntry = function(){
-  if (!plSel || !asmSel) return;
-  var entry = dataRaw[plSel]?.assemblies?.[asmSel] || {};
-  var mpb   = entry.max_per_box || 20;
+      const onAddEntry = ()=>{
+        if (!plSel || !asmSel) return;
+        const entry = dataRaw[plSel]?.assemblies?.[asmSel] || {};
+        const mpb   = entry.max_per_box || 20;
 
-  var qInput = String(qty).trim();
-  var isNum  = /^\d+(\.\d+)?$/.test(qInput);
-  var q      = isNum ? Math.max(1, Math.min(mpb, Number(qInput))) : qInput.toUpperCase();
+        const qInput = String(qty).trim();
+        const isNum  = /^\d+(\.\d+)?$/.test(qInput);
+        const q      = isNum ? Math.max(1, Math.min(mpb, Number(qInput))) : qInput.toUpperCase();
 
-  var article_no = entry.article_no || '';
-  var draft = findDraft(plSel, asmSel);
-  if (draft) {
-    setItems(prev => prev.map(it => it.id===draft.id
-      ? {...it, entries: it.entries.concat([{qty:q}]), updatedAt: Date.now()}
-      : it));
-  } else {
-    setItems(prev => prev.concat([{
-      id: uid(), pl: plSel, asm: asmSel, article_no,
-      written:false, createdAt: Date.now(), updatedAt: Date.now(),
-      entries:[{qty:q}]
-    }]));
-  }
-};
-
-      const removeOneEntry = function(id, idx){ setItems(function(prev){ return prev.map(function(it){ return it.id===id ? Object.assign({}, it, { entries: it.entries.filter(function(_,i){return i!==idx}), updatedAt: Date.now() }) : it; }); }); };
-      const clearEntries   = function(id){ setItems(function(prev){ return prev.map(function(it){ return it.id===id ? Object.assign({}, it, { entries: [], updatedAt: Date.now() }) : it; }); }); };
-      const deleteItem     = function(id){ setItems(function(prev){ return prev.filter(function(it){ return it.id!==id; }); }); };
-
-      const markWritten = function(id){
-        var it = items.find(function(x){ return x.id===id; }); if (!it) return;
-        if (!it.written) {
-          var green = findGreen(it.pl, it.asm);
-          if (!green) { setItems(function(prev){ return prev.map(function(x){ return x.id===id ? Object.assign({}, x, { written:true, updatedAt: Date.now() }) : x; }); }); }
-          else {
-            var appended = it.entries.map(function(e){ return Object.assign({}, e, {isMerged:true}); });
-            setItems(function(prev){
-              return prev
-                .map(function(x){ return x.id===green.id ? Object.assign({}, x, { entries: x.entries.concat(appended), updatedAt: Date.now() }) : x; })
-                .filter(function(x){ return x.id!==id; });
-            });
-          }
-        } else { setItems(function(prev){ return prev.map(function(x){ return x.id===id ? Object.assign({}, x, { written:false, updatedAt: Date.now() }) : x; }); }); }
+        const article_no = entry.article_no || '';
+        const draft = findDraft(plSel, asmSel);
+        if (draft) {
+          setItems(prev => prev.map(it => it.id===draft.id
+            ? {...it, entries: it.entries.concat([{qty:q}]), updatedAt: Date.now()}
+            : it));
+        } else {
+          setItems(prev => prev.concat([{
+            id: uid(), pl: plSel, asm: asmSel, article_no,
+            written:false, createdAt: Date.now(), updatedAt: Date.now(),
+            entries:[{qty:q}]
+          }]));
+        }
       };
 
-      const makeBackup = function(){ return { version: 1, ts: Date.now(), data: { dataRaw: dataRaw, items: items, dateISO: dateISO, dateText: dateText } }; };
-      const applyBackup = function(bk){ if (!bk || !bk.data) throw new Error('Backupformat ungültig'); var d = bk.data; setDataRaw(normalizeData(d.dataRaw||{})); setItems(Array.isArray(d.items)? d.items : []); setDateISO(d.dateISO || todayISO()); setDateText(d.dateText || fmtDEfromISO(d.dateISO||todayISO())); };
-      const downloadBackup = function(){ try{ var bk=makeBackup(); downloadFile('boxcountermini-backup-'+new Date(bk.ts).toISOString().slice(0,10)+'.json', JSON.stringify(bk,null,2), 'application/json'); alert('Backup gespeichert (JSON).'); }catch(e){ alert('Backup fehlgeschlagen'); } };
-      const loadBackupFile  = function(file){ if(!file) return; var reader = new FileReader(); reader.onload=function(){ try{ var data=JSON.parse(String(reader.result||'{}')); applyBackup(data); alert('Backup importiert.'); }catch(e){ console.error(e); alert('Ungültige Backup-Datei'); } }; reader.readAsText(file); };
+      const removeOneEntry = (id, idx)=> setItems(prev => prev.map(it => it.id===id ? {...it, entries: it.entries.filter((_,i)=>i!==idx), updatedAt: Date.now()} : it));
+      const clearEntries   = id       => setItems(prev => prev.map(it => it.id===id ? {...it, entries: [], updatedAt: Date.now()} : it));
+      const deleteItem     = id       => setItems(prev => prev.filter(it => it.id!==id));
 
-      useEffect(function(){
-        var saver = function(){ try{ if (!autoBackup) return; var bk = makeBackup(); if (storeMode==='idb') IDB.set('autoBackup', bk).catch(function(){}) }catch(e){} };
-        window.addEventListener('pagehide', saver);
-        window.addEventListener('beforeunload', saver);
-        return function(){ window.removeEventListener('pagehide', saver); window.removeEventListener('beforeunload', saver); };
-      }, [autoBackup, storeMode, dataRaw, items, dateISO, dateText]);
-
-      const onImportCSV = function(file){
-  if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function(){
-    try {
-      var rows = parseCSV(String(reader.result||''));
-      if (!rows.length) { alert('Kein CSV erkannt'); return; }
-
-      var next = JSON.parse(JSON.stringify(dataRaw || {}));
-      var added = 0, firstPL='', firstASM='';
-
-      rows.forEach(function(r){
-        var pl  = normalizeName(r.produktlinie||'');
-        var asm = normalizeName(r.baugruppe||'');
-        if (!pl || !asm) return;
-
-        next[pl] = next[pl] || { assemblies:{} };
-        var cur  = next[pl].assemblies[asm] || {};
-
-        var maxRaw = String(r.max_label != null ? r.max_label : r.max_per_box || '').trim();
-        var isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
-        var maxNum = isNum ? Math.max(1, Number(maxRaw)) : Math.max(1, Number(r.max_per_box || cur.max_per_box || 20));
-
-        next[pl].assemblies[asm] = {
-          article_no: (r.artikelnummer || cur.article_no || '').trim(),
-          max_per_box: maxNum,
-          max_label: maxRaw || cur.max_label || String(maxNum)
-        };
-        added++;
-        if (!firstPL){ firstPL = pl; firstASM = asm; }
-      });
-
-      var nextNorm = normalizeData(next);
-      if (!added || !Object.keys(nextNorm).length) {
-        alert('CSV gelesen, aber keine gültigen Zeilen erkannt.\nBitte Kopfzeile prüfen oder die Spaltenreihenfolge: ArtNr;Baugruppe;Bauteil;Teile');
-        return;
-      }
-
-      setDataRaw(nextNorm);
-      try { localStorage.setItem('bcm:dataRaw', JSON.stringify(nextNorm)); } catch(e){}
-      if (storeMode === 'idb') { IDB.set('dataRaw', nextNorm).catch(function(){}); }
-
-      // Auswahl auf ersten importierten Datensatz setzen
-      setPlSel(firstPL);
-      setAsmSel(firstASM);
-
-      alert(added + ' Datensätze übernommen.');
-    } catch (e) {
-      console.error(e);
-      alert('Import fehlgeschlagen');
-    }
-  };
-  reader.readAsText(file);
-};
-
-      const deleteAssembly = function(pl, asm){
+      const deleteAssembly = (pl, asm)=>{
         if (!pl||!asm) return;
-        var next = JSON.parse(JSON.stringify(dataRaw));
-        if (!next[pl] || !next[pl].assemblies[asm]) return;
-        var backupAsm = next[pl].assemblies[asm];
+        const next = JSON.parse(JSON.stringify(dataRaw));
+        if (!next[pl]?.assemblies?.[asm]) return;
+        const backupAsm = next[pl].assemblies[asm];
         delete next[pl].assemblies[asm];
-        var removedItems = alsoDeleteItemsFlag ? items.filter(function(it){ return it.pl===pl && it.asm===asm; }) : [];
+        const removedItems = alsoDeleteItemsFlag ? items.filter(it=> it.pl===pl && it.asm===asm) : [];
         setDataRaw(normalizeData(next));
-        if (alsoDeleteItemsFlag && removedItems.length) { setItems(function(prev){ return prev.filter(function(it){ return !(it.pl===pl && it.asm===asm); }); }); }
-        setLastDeletion({ pl:pl, asm:asm, asmData: backupAsm, items: removedItems });
-        if (plSel===pl && asmSel===asm) { var asms = Object.keys(next[pl] && next[pl].assemblies || {}); setAsmSel(asms[0]||''); }
+        if (alsoDeleteItemsFlag && removedItems.length) { setItems(prev=> prev.filter(it=> !(it.pl===pl && it.asm===asm))); }
+        setLastDeletion({ pl, asm, asmData: backupAsm, items: removedItems });
+        if (plSel===pl && asmSel===asm) {
+          const asms = Object.keys(next[pl]?.assemblies || {});
+          setAsmSel(asms[0]||'');
+        }
       };
 
-      const undoDeletion = function(){
+      const undoDeletion = ()=>{
         if (!lastDeletion) return;
-        var pl = lastDeletion.pl, asm = lastDeletion.asm, asmData = lastDeletion.asmData, removed = lastDeletion.items;
-        var next = JSON.parse(JSON.stringify(dataRaw));
+        const { pl, asm, asmData, items: removed } = lastDeletion;
+        const next = JSON.parse(JSON.stringify(dataRaw));
         next[pl] = next[pl] || { assemblies:{} };
         next[pl].assemblies[asm] = asmData;
         setDataRaw(normalizeData(next));
-        if (Array.isArray(removed) && removed.length) { setItems(function(prev){ return prev.concat(removed); }); }
+        if (Array.isArray(removed) && removed.length) { setItems(prev=> prev.concat(removed)); }
         setLastDeletion(null);
         if (!asmSel) setAsmSel(asm);
       };
 
-      const buildAllText = function(){
-        var lines = [];
+      // Backup
+      const makeBackup = ()=> ({ version: 1, ts: Date.now(), data: { dataRaw, items, dateISO, dateText } });
+      const applyBackup = (bk)=>{ if (!bk?.data) throw new Error('Backupformat ungültig'); const d=bk.data; setDataRaw(normalizeData(d.dataRaw||{})); setItems(Array.isArray(d.items)? d.items : []); setDateISO(d.dateISO || todayISO()); setDateText(d.dateText || fmtDEfromISO(d.dateISO||todayISO())); };
+      const downloadBackup = ()=>{ try{ const bk=makeBackup(); downloadFile('boxcountermini-backup-'+new Date(bk.ts).toISOString().slice(0,10)+'.json', JSON.stringify(bk,null,2), 'application/json'); alert('Backup gespeichert (JSON).'); }catch{ alert('Backup fehlgeschlagen'); } };
+      const loadBackupFile  = (file)=>{ if(!file) return; const reader = new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(String(reader.result||'{}')); applyBackup(data); alert('Backup importiert.'); }catch(e){ console.error(e); alert('Ungültige Backup-Datei'); } }; reader.readAsText(file); };
+
+      useEffect(()=>{
+        const saver = ()=>{ try{ if (!autoBackup) return; const bk = makeBackup(); if (storeMode==='idb') IDB.set('autoBackup', bk).catch(()=>{}) }catch{} };
+        window.addEventListener('pagehide', saver);
+        window.addEventListener('beforeunload', saver);
+        return ()=>{ window.removeEventListener('pagehide', saver); window.removeEventListener('beforeunload', saver); };
+      }, [autoBackup, storeMode, dataRaw, items, dateISO, dateText]);
+
+      // CSV Import (Datei)
+      const onImportCSV = (file)=>{
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ()=>{
+          try{
+            const rows = parseCSV(String(reader.result||''));
+            if (!rows.length) { alert('Kein CSV erkannt'); return; }
+
+            let next = JSON.parse(JSON.stringify(dataRaw || {}));
+            let added = 0, firstPL='', firstASM='';
+
+            rows.forEach(r=>{
+              const pl  = normalizeName(r.produktlinie||'');
+              const asm = normalizeName(r.baugruppe||'');
+              if (!pl || !asm) return;
+
+              next[pl] = next[pl] || { assemblies:{} };
+              const cur  = next[pl].assemblies[asm] || {};
+
+              const maxRaw = String(r.max_label ?? r.max_per_box ?? '').trim();
+              const isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
+              const maxNum = isNum ? Math.max(1, Number(maxRaw)) : Math.max(1, Number(r.max_per_box || cur.max_per_box || 20));
+
+              next[pl].assemblies[asm] = {
+                article_no: (r.artikelnummer || cur.article_no || '').trim(),
+                max_per_box: maxNum,
+                max_label: maxRaw || cur.max_label || String(maxNum)
+              };
+              added++;
+              if (!firstPL){ firstPL = pl; firstASM = asm; }
+            });
+
+            const nextNorm = normalizeData(next);
+            if (!added || !Object.keys(nextNorm).length) {
+              alert('CSV gelesen, aber keine gültigen Zeilen erkannt.\nBitte Kopfzeile prüfen oder Spalten: produktlinie,baugruppe,artikelnummer,max_per_box');
+              return;
+            }
+            setDataRaw(nextNorm);
+            try { localStorage.setItem('bcm:dataRaw', JSON.stringify(nextNorm)); } catch{}
+            if (storeMode === 'idb') { IDB.set('dataRaw', nextNorm).catch(()=>{}); }
+            setPlSel(firstPL); setAsmSel(firstASM);
+            alert(added + ' Datensätze übernommen.');
+          }catch(e){ console.error(e); alert('Import fehlgeschlagen'); }
+        };
+        reader.readAsText(file);
+      };
+
+      // Anzeige-Helfer
+      const buildAllText = ()=>{
+        const lines = [];
         if (dateText) lines.push(dateText);
-        items.forEach(function(it){
-          var head = it.article_no ? (it.pl + ' ' + it.asm + ' ' + it.article_no) : (it.pl + ' ' + it.asm);
+        items.forEach(it=>{
+          const head = it.article_no ? (it.pl + ' ' + it.asm + ' ' + it.article_no) : (it.pl + ' ' + it.asm);
           lines.push(head);
           lines.push(dashTextFromEntries(it.entries));
           lines.push('Gesamt: ' + String(sumEntries(it.entries)));
@@ -594,39 +513,40 @@ function onManualSave(){
         });
         return lines.join('\n');
       };
+      useEffect(()=>{ window.buildAllText = ()=> (items?.length? buildAllText() : '-'); }, [items, dateText]);
 
-      useEffect(function(){ window.buildAllText = function(){ if (!items || items.length===0) return '-'; return buildAllText(); }; }, [items, dateText]);
-
-      const onCopyAll = function(){ var ok = copyText(buildAllText()); if (ok) alert('Alle Zeilen kopiert.'); };
-      const onDownloadTXT = function(){ downloadFile('boxcountermini.txt', buildAllText()); };
-      const onDownloadCSV = function(){
-        var rows = [];
+      const onCopyAll = ()=>{ const ok = copyText(buildAllText()); if (ok) alert('Alle Zeilen kopiert.'); };
+      const onDownloadTXT = ()=> downloadFile('boxcountermini.txt', buildAllText());
+      const onDownloadCSV = ()=>{
+        const rows = [];
         rows.push(['datum','produktlinie','baugruppe','artikelnummer','gebinde','gesamt'].join(';'));
-        items.forEach(function(it){
-          rows.push([ dateText||'', it.pl, it.asm, it.article_no||'', dashTextFromEntries(it.entries), String(sumEntries(it.entries)) ].map(function(x){ return '"'+String(x).replace(/"/g,'\\"')+'"'; }).join(';'));
+        items.forEach(it=>{
+          rows.push([ dateText||'', it.pl, it.asm, it.article_no||'', dashTextFromEntries(it.entries), String(sumEntries(it.entries)) ]
+            .map(x=> '"'+String(x).replace(/"/g,'\\"')+'"').join(';'));
         });
         downloadFile('boxcountermini.csv', rows.join('\n'), 'text/csv');
       };
-      const onDownloadPDF = function(){
-        var jsPDF = window.jspdf && window.jspdf.jsPDF;
+      const onDownloadPDF = ()=>{
+        const jsPDF = window.jspdf && window.jspdf.jsPDF;
         if (!jsPDF) { alert('jsPDF nicht geladen'); return; }
-        var doc = new jsPDF({ unit:'pt', format:'a4' });
-        var y = 40;
+        const doc = new jsPDF({ unit:'pt', format:'a4' });
+        let y = 40;
         doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('BoxCounterMini – Übersicht', 40, y); y+=20;
         doc.setFont('helvetica',''); doc.setFontSize(11);
         if (dateText) { doc.text('Datum: ' + dateText, 40, y); y+=20; }
-        items.forEach(function(it){
-          var head = it.article_no ? (it.pl + ' ' + it.asm + ' ' + it.article_no) : (it.pl + ' ' + it.asm);
-          var body = dashTextFromEntries(it.entries);
-          var total= 'Gesamt: ' + String(sumEntries(it.entries));
-          [head, body, total, ''].forEach(function(line){
-            var split = doc.splitTextToSize(line, 515);
-            split.forEach(function(l){ if (y>780){ doc.addPage(); y=40; } doc.text(l, 40, y); y += 16; });
+        items.forEach(it=>{
+          const head = it.article_no ? (it.pl + ' ' + it.asm + ' ' + it.article_no) : (it.pl + ' ' + it.asm);
+          const body = dashTextFromEntries(it.entries);
+          const total= 'Gesamt: ' + String(sumEntries(it.entries));
+          [head, body, total, ''].forEach(line=>{
+            const split = doc.splitTextToSize(line, 515);
+            split.forEach(l=>{ if (y>780){ doc.addPage(); y=40; } doc.text(l, 40, y); y += 16; });
           });
         });
         doc.save('boxcountermini.pdf');
       };
 
+      // PWA Hilfsfunktionen
       function manifestJSON(){
         return JSON.stringify({
           name: 'BoxCounterMini',
@@ -642,19 +562,17 @@ function onManualSave(){
           ]
         }, null, 2);
       }
-
       function serviceWorkerJS(){
         return "const CACHE='bcm-v1';\nconst CORE=['./','index.html','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png'];\nself.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()))});\nself.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>k!==CACHE&&caches.delete(k)))).then(()=>self.clients.claim()))});\nself.addEventListener('fetch',e=>{const r=e.request;if(r.method!=='GET')return; e.respondWith(caches.match(r).then(hit=>hit||fetch(r).then(res=>{try{const copy=res.clone(); caches.open(CACHE).then(c=>c.put(r,copy));}catch(_){} return res;}).catch(()=>hit||new Response('Offline',{status:503}))));});";
       }
-
       function createIconCanvas(size){
-        var c = document.createElement('canvas'); c.width = size; c.height = size;
-        var ctx = c.getContext('2d');
-        var g = ctx.createLinearGradient(0,0,size,size);
+        const c = document.createElement('canvas'); c.width = size; c.height = size;
+        const ctx = c.getContext('2d');
+        const g = ctx.createLinearGradient(0,0,size,size);
         g.addColorStop(0,'#4f46e5'); g.addColorStop(1,'#6366f1');
         ctx.fillStyle = g; ctx.fillRect(0,0,size,size);
         ctx.globalAlpha = 0.08; ctx.fillStyle = '#ffffff';
-        for (var i=0;i<size;i+=Math.max(12, Math.floor(size/16))) { ctx.fillRect(i,0,1,size); ctx.fillRect(0,i,size,1); }
+        for (let i=0;i<size;i+=Math.max(12, Math.floor(size/16))) { ctx.fillRect(i,0,1,size); ctx.fillRect(0,i,size,1); }
         ctx.globalAlpha = 1;
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold '+ Math.floor(size*0.5) +'px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
@@ -662,87 +580,55 @@ function onManualSave(){
         ctx.fillText('BC', size/2, size/2 + Math.floor(size*0.04));
         return c;
       }
-
-      function dataURLtoBlob(dataURL){
-        var parts = dataURL.split(','), mime = parts[0].match(/:(.*?);/)[1];
-        var bstr = atob(parts[1]); var n = bstr.length; var u8 = new Uint8Array(n);
-        for (var i=0;i<n;i++) u8[i] = bstr.charCodeAt(i);
-        return new Blob([u8], {type: mime});
-      }
-
-      function canvasToBlob(canvas){
-        return new Promise(function(resolve){
-          if (canvas.toBlob) { canvas.toBlob(function(b){ resolve(b); }, 'image/png'); }
-          else { resolve(dataURLtoBlob(canvas.toDataURL('image/png'))); }
-        });
-      }
-
-      function saveBlobSmart(name, blob){
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        var supportsDownload = 'download' in a;
-        var isIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent);
-        if (!supportsDownload || isIOS || (typeof inApp!=='undefined' && inApp)) {
-          var w = window.open(url, '_blank');
-          if (!w) alert('Icon wurde in einem neuen Tab geöffnet. Dort speichern (Langdruck/„Bild sichern“).');
-          setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
-          return;
-        }
-        a.href = url; a.download = name; document.body.appendChild(a); a.click();
-        setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
-      }
-
       window.__bcm_pwa = {
-        dlManifest: function(){ return downloadFile('manifest.webmanifest', manifestJSON(), 'application/manifest+json'); },
-        dlSW:       function(){ return downloadFile('sw.js', serviceWorkerJS(), 'application/javascript'); },
-        dlIcon192:  function(){ return (createIconCanvas(192).toDataURL('image/png')); },
-        dlIcon512:  function(){ return (createIconCanvas(512).toDataURL('image/png')); },
+        dlManifest: ()=> downloadFile('manifest.webmanifest', manifestJSON(), 'application/manifest+json'),
+        dlSW:       ()=> downloadFile('sw.js', serviceWorkerJS(), 'application/javascript'),
+        dlIcon192:  ()=> (createIconCanvas(192).toDataURL('image/png')),
+        dlIcon512:  ()=> (createIconCanvas(512).toDataURL('image/png')),
       };
 
-      // Wenn manifest fehlt: dynamisch setzen
-      try {
-        fetch('./manifest.webmanifest', {method:'HEAD'}).catch(function(){}).then(function(res){
-          if (!res || !res.ok) {
-            var blob = new Blob([manifestJSON()], {type:'application/manifest+json'});
-            var url  = URL.createObjectURL(blob);
-            var link = document.getElementById('manifest-link');
-            if (link) link.href = url;
-          }
-        });
-      } catch(_){ }
+      // Wenn Manifest fehlt: nur im http(s) Kontext dynamisch setzen
+      if (location.protocol.startsWith('http')) {
+        try {
+          fetch('./manifest.webmanifest', {method:'HEAD'}).catch(()=>{}).then(res=>{
+            if (!res || !res.ok) {
+              const blob = new Blob([manifestJSON()], {type:'application/manifest+json'});
+              const url  = URL.createObjectURL(blob);
+              const link = document.getElementById('manifest-link');
+              if (link) link.href = url;
+            }
+          });
+        } catch(_){}
+      }
 
-      var plList = Object.keys(dataRaw);
-      var asmList = plSel ? Object.keys((dataRaw[plSel] && dataRaw[plSel].assemblies)||{}) : [];
-      var artForSel = (plSel && asmSel) ? (((dataRaw[plSel] && dataRaw[plSel].assemblies && dataRaw[plSel].assemblies[asmSel])||{}).article_no || '') : '';
+      // UI Komponenten
+      const plList = Object.keys(dataRaw);
+      const asmList = plSel ? Object.keys(dataRaw[plSel]?.assemblies||{}) : [];
+      const artForSel = (plSel && asmSel) ? (dataRaw[plSel]?.assemblies?.[asmSel]?.article_no || '') : '';
 
-      const EntryLine = function({entries}){
-        entries = entries||[];
-        return (
-          <div className="font-mono text-sm sm:text-base whitespace-pre-wrap break-words">
-            <span>-</span>
-            {entries.map(function(e, i){
-              return (
-                <React.Fragment key={i}>
-                  <span className={e.isMerged? 'text-yellow-600 font-semibold' : ''}>{String(e.qty)}</span>
-                  <span>-</span>
-                </React.Fragment>
-              );
-            })}
-          </div>
-        );
-      };
+      const EntryLine = ({entries=[]}) => (
+        <div className="font-mono text-sm sm:text-base whitespace-pre-wrap break-words">
+          <span>-</span>
+          {entries.map((e,i)=>(
+            <React.Fragment key={i}>
+              <span className={e.isMerged? 'text-yellow-600 font-semibold' : ''}>{String(e.qty)}</span>
+              <span>-</span>
+            </React.Fragment>
+          ))}
+        </div>
+      );
 
       return (
         <div className="max-w-screen-md mx-auto p-3 sm:p-6">
           <header className="mb-4 sm:mb-6">
             <h1 className="text-2xl sm:text-3xl font-bold">BoxCounterMini</h1>
-            <p className="text-slate-600">IndexedDB‑Speicher • Auto‑Backup • CSV • Datum • Export (TXT/CSV/PDF) • Merge • Undo • PWA Dateien</p>
+            <p className="text-slate-600">IndexedDB-Speicher • Auto-Backup • CSV • Datum • Export (TXT/CSV/PDF) • Merge • Undo • PWA Dateien</p>
             <div className="mt-2 text-sm text-slate-700">Aktuelles Datum: <span className="font-medium">{dateText||'—'}</span></div>
           </header>
 
           {(inApp || location.protocol!=='https:') && (
             <div className="mb-4 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl p-3 text-sm">
-              Hinweis: Du nutzt vermutlich einen In‑App‑Browser (z. B. WhatsApp) oder kein HTTPS. Datei‑Importe & PWA‑Installation können blockiert sein. Öffne am besten in Chrome/Safari.
+              Hinweis: Du nutzt vermutlich einen In-App-Browser (z. B. WhatsApp) oder kein HTTPS. Datei-Importe & PWA-Installation können blockiert sein. Öffne am besten in Chrome/Safari.
             </div>
           )}
 
@@ -750,15 +636,15 @@ function onManualSave(){
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-sm text-slate-600 mb-1">Datum (Picker)</label>
-                <input type="date" value={dateISO} onChange={function(e){ var v=e.target.value; setDateISO(v); setDateText(fmtDEfromISO(v)); }} className="w-full rounded-xl border border-slate-300 px-3 py-3" />
+                <input type="date" value={dateISO} onChange={e=>{ const v=e.target.value; setDateISO(v); setDateText(fmtDEfromISO(v)); }} className="w-full rounded-xl border border-slate-300 px-3 py-3" />
               </div>
               <div>
                 <label className="block text-sm text-slate-600 mb-1">Datum (Text, DE)</label>
-                <input type="text" value={dateText} onChange={function(e){ setDateText(e.target.value); }} placeholder="01.09.2025" className="w-full rounded-xl border border-slate-300 px-3 py-3" />
+                <input type="text" value={dateText} onChange={e=> setDateText(e.target.value)} placeholder="01.09.2025" className="w-full rounded-xl border border-slate-300 px-3 py-3" />
               </div>
               <div className="flex items-end gap-2">
-                <Button onClick={function(){ var t=todayISO(); setDateISO(t); setDateText(fmtDEfromISO(t)); }}>Heute</Button>
-                <Ghost onClick={function(){ setDateISO(''); setDateText(''); }}>Datum leeren</Ghost>
+                <Button onClick={()=>{ const t=todayISO(); setDateISO(t); setDateText(fmtDEfromISO(t)); }}>Heute</Button>
+                <Ghost onClick={()=>{ setDateISO(''); setDateText(''); }}>Datum leeren</Ghost>
               </div>
             </div>
           </Section>
@@ -767,14 +653,14 @@ function onManualSave(){
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
               <div>
                 <label className="block text-sm text-slate-600 mb-1">Produktlinie</label>
-                <select value={plSel} onChange={function(e){ setPlSel(e.target.value); }} className="w-full rounded-xl border border-slate-300 px-3 py-3">
-                  {plList.map(function(pl){ return <option key={pl} value={pl}>{pl}</option>; })}
+                <select value={plSel} onChange={e=> setPlSel(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-3">
+                  {plList.map(pl => <option key={pl} value={pl}>{pl}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm text-slate-600 mb-1">Baugruppe</label>
-                <select value={asmSel} onChange={function(e){ setAsmSel(e.target.value); }} className="w-full rounded-xl border border-slate-300 px-3 py-3">
-                  {asmList.map(function(a){ return <option key={a} value={a}>{a}</option>; })}
+                <select value={asmSel} onChange={e=> setAsmSel(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-3">
+                  {asmList.map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
               </div>
             </div>
@@ -784,96 +670,86 @@ function onManualSave(){
                 <input type="text" readOnly value={artForSel} className="w-full rounded-xl border border-slate-300 px-3 py-3 bg-slate-50" />
               </div>
               <div>
-  <label className="block text-sm text-slate-600 mb-1">
-    Menge pro Gebinde (max. {(dataRaw[plSel]?.assemblies?.[asmSel]?.max_label) ?? maxForCurrent})
-  </label>
-  <input
-    type="text"
-    value={qty}
-    onChange={e=>setQty(e.target.value)}
-    className="w-full rounded-xl border border-slate-300 px-3 py-3"
-    placeholder="z.B. 20 oder K / P / 30/30"
-  />
-</div>
+                <label className="block text-sm text-slate-600 mb-1">
+                  Menge pro Gebinde (max. {(dataRaw[plSel]?.assemblies?.[asmSel]?.max_label) ?? maxForCurrent})
+                </label>
+                <input
+                  type="text"
+                  value={qty}
+                  onChange={e=>setQty(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-3"
+                  placeholder="z.B. 20 oder K / P / 30/30"
+                />
+              </div>
               <div className="flex gap-2">
                 <Button onClick={onAddEntry}>Gebinde hinzufügen</Button>
-                <Ghost onClick={function(){ setQty(maxForCurrent); }}>Auf Max</Ghost>
+                <Ghost onClick={()=> setQty(maxForCurrent)}>Auf Max</Ghost>
               </div>
             </div>
-            <div className="mt-3 text-xs text-slate-500">Schlüssel ist immer (Produktlinie, Baugruppe). Artikelnummer hängt strikt an dieser Kombination – kein Vermischen zwischen Linien.</div>
-
-</Section>
-
-{/* NEU: Produkt manuell hinzufügen */}
-<Section title="Produkt manuell hinzufügen">
-  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-    <input
-      className="w-full rounded-xl border border-slate-300 px-3 py-3"
-      placeholder="Produktlinie"
-      value={mPl}
-      onChange={(e)=>setMPl(e.target.value)}
-    />
-    <input
-      className="w-full rounded-xl border border-slate-300 px-3 py-3"
-      placeholder="Baugruppe"
-      value={mAsm}
-      onChange={(e)=>setMAsm(e.target.value)}
-    />
-    <input
-      className="w-full rounded-xl border border-slate-300 px-3 py-3"
-      placeholder="Artikelnummer (optional)"
-      value={mArt}
-      onChange={(e)=>setMArt(e.target.value)}
-    />
-    <input
-      type="number" min="1"
-      className="w-full rounded-xl border border-slate-300 px-3 py-3"
-      placeholder="Max je Gebinde"
-      value={mMax}
-      onChange={(e)=>setMMax(e.target.value)}
-    />
-  </div>
-  <div className="mt-3 flex gap-2">
-    <Button onClick={onManualSave}>Speichern</Button>
-    <Ghost onClick={()=>{ setMPl(''); setMAsm(''); setMArt(''); setMMax(20); }}>Felder leeren</Ghost>
-  </div>
-  <p className="text-xs text-slate-500 mt-2">
-    Hinweis: Bestehende Kombinationen (Produktlinie+Baugruppe) werden aktualisiert.
-  </p>
-</Section>
-
-<Section title="Aktuelle Liste">
-
-            {items.length===0 && (<div className="text-sm text-slate-600">Noch keine Einträge. Füge oben ein Gebinde hinzu.</div>)}
-            <div className="space-y-3">
-              {items.map(function(it){
-                return (
-                  <div key={it.id} className={"rounded-xl border p-3 "+(it.written? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white')}>
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="font-semibold">{it.pl} {it.asm} {it.article_no? (<span className="text-slate-600 font-normal">{it.article_no}</span>) : null}</div>
-                        <EntryLine entries={it.entries}/>
-                        <div className="text-sm text-slate-700 mt-1">Gesamt: <span className="font-medium">{sumEntries(it.entries)}</span></div>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <Ghost onClick={function(){ markWritten(it.id) }}>{it.written? 'Als offen markieren' : 'Als fertig (grün)'}</Ghost>
-                        <Ghost onClick={function(){ clearEntries(it.id) }}>Mengen leeren</Ghost>
-                        <Danger onClick={function(){ deleteItem(it.id) }}>Eintrag löschen</Danger>
-                      </div>
-                    </div>
-                    {it.entries.length>0 && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {it.entries.map(function(e, idx){
-                          return (<button key={idx} title="Menge entfernen" onClick={function(){ removeOneEntry(it.id, idx); }} className="text-xs bg-slate-100 hover:bg-slate-200 rounded-lg px-2 py-1">{e.qty} ×</button>);
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="mt-3 text-xs text-slate-500">
+              Schlüssel ist immer (Produktlinie, Baugruppe). Artikelnummer hängt strikt an dieser Kombination – kein Vermischen zwischen Linien.
             </div>
           </Section>
 
+          {/* Manuell hinzufügen */}
+          <Section title="Produkt manuell hinzufügen">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <input className="w-full rounded-xl border border-slate-300 px-3 py-3" placeholder="Produktlinie" value={mPl}  onChange={e=>setMPl(e.target.value)} />
+              <input className="w-full rounded-xl border border-slate-300 px-3 py-3" placeholder="Baugruppe"   value={mAsm} onChange={e=>setMAsm(e.target.value)} />
+              <input className="w-full rounded-xl border border-slate-300 px-3 py-3" placeholder="Artikelnummer (optional)" value={mArt} onChange={e=>setMArt(e.target.value)} />
+              <input type="number" min="1" className="w-full rounded-xl border border-slate-300 px-3 py-3" placeholder="Max je Gebinde" value={mMax} onChange={e=>setMMax(e.target.value)} />
+            </div>
+            <div className="mt-3 flex gap-2">
+              <Button onClick={onManualSave}>Speichern</Button>
+              <Ghost onClick={()=>{ setMPl(''); setMAsm(''); setMArt(''); setMMax(20); }}>Felder leeren</Ghost>
+            </div>
+            <p className="text-xs text-slate-500 mt-2">Hinweis: Bestehende Kombinationen (Produktlinie+Baugruppe) werden aktualisiert.</p>
+          </Section>
+
+          {/* Liste */}
+          <Section title="Aktuelle Liste">
+            {items.length===0 && (<div className="text-sm text-slate-600">Noch keine Einträge. Füge oben ein Gebinde hinzu.</div>)}
+            <div className="space-y-3">
+              {items.map(it=>(
+                <div key={it.id} className={"rounded-xl border p-3 "+(it.written? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white')}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-semibold">{it.pl} {it.asm} {it.article_no? (<span className="text-slate-600 font-normal">{it.article_no}</span>) : null}</div>
+                      <EntryLine entries={it.entries}/>
+                      <div className="text-sm text-slate-700 mt-1">Gesamt: <span className="font-medium">{sumEntries(it.entries)}</span></div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Ghost onClick={()=>{ 
+                        if (!it.written) {
+                          const green = findGreen(it.pl,it.asm);
+                          if (!green) setItems(prev=> prev.map(x=> x.id===it.id ? {...x, written:true, updatedAt:Date.now()} : x));
+                          else {
+                            const appended = it.entries.map(e=> ({...e, isMerged:true}));
+                            setItems(prev=> prev
+                              .map(x=> x.id===green.id ? {...x, entries:x.entries.concat(appended), updatedAt:Date.now()} : x)
+                              .filter(x=> x.id!==it.id));
+                          }
+                        } else {
+                          setItems(prev=> prev.map(x=> x.id===it.id ? {...x, written:false, updatedAt:Date.now()} : x));
+                        }
+                      }}>{it.written? 'Als offen markieren' : 'Als fertig (grün)'}</Ghost>
+                      <Ghost onClick={()=> clearEntries(it.id)}>Mengen leeren</Ghost>
+                      <Danger onClick={()=> deleteItem(it.id)}>Eintrag löschen</Danger>
+                    </div>
+                  </div>
+                  {it.entries.length>0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {it.entries.map((e, idx)=>(
+                        <button key={idx} title="Menge entfernen" onClick={()=> removeOneEntry(it.id, idx)} className="text-xs bg-slate-100 hover:bg-slate-200 rounded-lg px-2 py-1">{e.qty} ×</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Section>
+
+          {/* Export */}
           <Section title="Export">
             <div className="flex flex-wrap gap-2">
               <Button onClick={onCopyAll}>Alles kopieren</Button>
@@ -884,81 +760,61 @@ function onManualSave(){
             <pre className="mt-3 text-xs bg-slate-50 p-3 rounded-xl overflow-x-auto">{buildAllText()}</pre>
           </Section>
 
-          <Section title="Stammdaten importieren (CSV)" right={<Ghost onClick={function(){
-            var sample = [
-              'produktlinie,baugruppe,artikelnummer,max_per_box',
-              'Salsa,Untergestell,57-90-10,20',
-              'Salsa,Rückenteil,57-90-12,15',
-              'Sensai,Rückenteil,61-90-01-V4,25'
-            ].join('\n');
-            downloadFile('stammdaten-vorlage.csv', sample, 'text/csv');
-          }}>Vorlage herunterladen</Ghost>}>
-            <input type="file" accept=".csv,.txt" onChange={function(e){ onImportCSV(e.target.files && e.target.files[0]); e.target.value=''; }} className="block w-full text-sm text-slate-700 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
+          {/* CSV Import */}
+          <Section title="Stammdaten importieren (CSV)" right={
+            <Ghost onClick={()=>{
+              const sample = [
+                'produktlinie,baugruppe,artikelnummer,max_per_box',
+                'Salsa,Untergestell,57-90-10,20',
+                'Salsa,Rückenteil,57-90-12,15',
+                'Sensai,Rückenteil,61-90-01-V4,25'
+              ].join('\n');
+              downloadFile('stammdaten-vorlage.csv', sample, 'text/csv');
+            }}>Vorlage herunterladen</Ghost>
+          }>
+            <input type="file" accept=".csv,.txt" onChange={e=>{ onImportCSV(e.target.files && e.target.files[0]); e.target.value=''; }} className="block w-full text-sm text-slate-700 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
             <p className="text-xs text-slate-500 mt-2">Erwartete Spalten: produktlinie,baugruppe,artikelnummer,max_per_box • Trennzeichen , oder ;</p>
-            <div className="mt-3">
-              <label className="block text-sm text-slate-600 mb-1">CSV aus Text (Fallback für In‑App‑Browser)</label>
-              <textarea id="csvText" rows={4} placeholder={`produktlinie,baugruppe,artikelnummer,max_per_box\nSalsa,Untergestell,57-90-10,20`} className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm"></textarea>
-              <div className="mt-2"><Button onClick={function(){
-                var t=document.getElementById('csvText').value; var rows=parseCSV(t); if(!rows.length){alert('Kein CSV erkannt');return;}
-                var next=JSON.parse(JSON.stringify(dataRaw));
-                rows.forEach(function(r){
-                  var pl=normalizeName(r.produktlinie||''); var asm=normalizeName(r.baugruppe||''); if(!pl||!asm)return;
-                  next[pl]=next[pl]||{assemblies:{}}; var cur=next[pl].assemblies[asm]||{};
-                  next[pl].assemblies[asm]={ article_no:(r.artikelnummer||cur.article_no||'').trim(), max_per_box:Math.max(1, Number(r.max_per_box||cur.max_per_box||20)) };
-                });
-                setDataRaw(normalizeData(next));
-                var first=rows.find(function(r){return r.produktlinie && r.baugruppe;});
-                if(first){ setPlSel(normalizeName(first.produktlinie)); setAsmSel(normalizeName(first.baugruppe)); }
-                alert(rows.length+' Zeile(n) importiert.');
-              }}>Import starten</Button></div>
-            </div>
           </Section>
 
+          {/* Inventar verwalten */}
           <Section title="Inventar verwalten (Baugruppe löschen)">
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="text-sm">Aktuell: <span className="font-medium">{plSel} › {asmSel||'—'}</span></div>
               <label className="inline-flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={alsoDeleteItemsFlag} onChange={function(e){ setAlsoDeleteItemsFlag(e.target.checked); }} />
+                <input type="checkbox" checked={alsoDeleteItemsFlag} onChange={e=> setAlsoDeleteItemsFlag(e.target.checked)} />
                 <span>Auch zugehörige Listeneinträge entfernen</span>
               </label>
-              <Danger onClick={function(){ if (!asmSel) return; if(confirm('Baugruppe wirklich löschen?')) deleteAssembly(plSel, asmSel); }} className="sm:ml-auto">Baugruppe löschen</Danger>
+              <Danger onClick={()=>{ if (!asmSel) return; if(confirm('Baugruppe wirklich löschen?')) deleteAssembly(plSel, asmSel); }} className="sm:ml-auto">Baugruppe löschen</Danger>
             </div>
             {lastDeletion && (
               <div className="mt-3 text-sm bg-yellow-50 border border-yellow-200 rounded-xl p-3">Gelöscht: <b>{lastDeletion.pl}</b> › <b>{lastDeletion.asm}</b> – <button onClick={undoDeletion} className="underline">Rückgängig</button></div>
             )}
           </Section>
 
-          <PWASection/>
-
-          <Section title="Zurücksetzen">
-  <div className="flex flex-wrap gap-2">
-    <Danger onClick={resetMasterToStart}>Stammdaten → Startdaten</Danger>
-    <Danger onClick={clearMaster}>Stammdaten leeren</Danger>
-    <Ghost  onClick={factoryResetAll}>Werkseinstellungen (alles löschen)</Ghost>
-  </div>
-  <p className="text-xs text-slate-500 mt-2">
-    Hinweis: „Stammdaten leeren/Startdaten“ lässt die aktuelle Liste unangetastet. „Werkseinstellungen“ löscht zusätzlich alle Listeneinträge & setzt das Datum neu.
-  </p>
-</Section>
-          
-
-          <Section title="Diagnose">
-            <div className="flex flex-wrap gap-2 items-center">
-              <Ghost onClick={runSelfTests}>Selbsttests ausführen</Ghost>
-              <span className="text-xs text-slate-500">{storeReady? (storeMode==='idb'? 'Speicher: IndexedDB' : 'Speicher: localStorage') : 'Initialisiere…'}</span>
+          {/* PWA Dateien */}
+          <Section title="PWA – Installationsdateien (für Startbildschirm/Offline)">
+            <p className="text-sm text-slate-600 mb-3">Lade diese Dateien herunter und lege sie auf deinem Webspace ab:
+              <code className="ml-1">./manifest.webmanifest</code>, <code>./sw.js</code>, <code>./icons/icon-192.png</code>, <code>./icons/icon-512.png</code>.</p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <Ghost onClick={()=>window.__bcm_pwa.dlManifest()}>manifest.webmanifest</Ghost>
+              <Ghost onClick={()=>window.__bcm_pwa.dlSW()}>sw.js</Ghost>
+              <Ghost onClick={()=>window.__bcm_pwa.dlIcon192()}>icon-192.png</Ghost>
+              <Ghost onClick={()=>window.__bcm_pwa.dlIcon512()}>icon-512.png</Ghost>
             </div>
-            {testResults.length>0 && (
-              <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {testResults.map(function(t,i){ return (
-                  <li key={i} className={'text-sm rounded-lg px-3 py-2 '+(t.ok?'bg-emerald-50 text-emerald-800':'bg-rose-50 text-rose-800')}>
-                    <span className="font-medium">{t.name}</span>: {t.ok? 'OK' : 'Fehler'} {t.err? (' – '+t.err):''}
-                  </li>
-                ); })}
-              </ul>
-            )}
+            <p className="text-xs text-slate-500">Hinweis: Service Worker funktionieren nur auf <b>HTTPS</b> oder <b>localhost</b>. In-App-Browser (z. B. WhatsApp) blockieren oft die Installation.</p>
           </Section>
 
-          <footer className="mt-6 text-center text-xs text-slate-500">v46 • Offline‑fähig (nach Installation) • © BoxCounterMini</footer>
+          {/* Zurücksetzen */}
+          <Section title="Zurücksetzen">
+            <div className="flex flex-wrap gap-2">
+              <Danger onClick={resetMasterToStart}>Stammdaten → Startdaten</Danger>
+              <Danger onClick={clearMaster}>Stammdaten leeren</Danger>
+              <Ghost  onClick={factoryResetAll}>Werkseinstellungen (alles löschen)</Ghost>
+            </div>
+            <p className="text-xs text-slate-500 mt-2">Hinweis: „Stammdaten leeren/Startdaten“ lässt die aktuelle Liste unangetastet. „Werkseinstellungen“ löscht zusätzlich alle Listeneinträge & setzt das Datum neu.</p>
+          </Section>
+
+          <footer className="mt-6 text-center text-xs text-slate-500">Offline-fähig (nach Installation) • © BoxCounterMini</footer>
         </div>
       );
     }
@@ -967,27 +823,21 @@ function onManualSave(){
     root.render(<ErrorBoundary><App/></ErrorBoundary>);
   </script>
 
-<script>
-  // Minimal-Diagnose
-  window.addEventListener('error', e => {
-    console.error('Global JS error:', e.message, e.filename, e.lineno, e.colno, e.error);
-  });
-  window.addEventListener('unhandledrejection', e => {
-    console.error('Unhandled promise rejection:', e.reason);
-  });
-  console.log('Diagnostics hooked: Babel-App geladen, gleich sollte React booten…');
-</script>
-  
-  <!-- Service Worker registrieren -->
- <script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function () {
-      navigator.serviceWorker
-        .register('./sw.js')
-        .catch(function (e) { console.warn('SW-Registrierung fehlgeschlagen:', e); });
-    });
-  }
-</script>
+  <!-- Mini-Diagnose -->
+  <script>
+    window.addEventListener('error', e => console.error('Global JS error:', e.message, e.filename, e.lineno, e.colno, e.error));
+    window.addEventListener('unhandledrejection', e => console.error('Unhandled promise rejection:', e.reason));
+  </script>
 
+  <!-- Service Worker nur unter http/https -->
+  <script>
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker
+          .register('./sw.js')
+          .catch(function (e) { console.warn('SW-Registrierung fehlgeschlagen:', e); });
+      });
+    }
+  </script>
 </body>
 </html>
