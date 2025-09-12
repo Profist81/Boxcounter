@@ -393,32 +393,37 @@ function toggleStatus(id, key){
   }));
 }
       const onAddEntry = ()=>{
-        if (!plSel || !asmSel) return;
-        const entry = dataRaw[plSel]?.assemblies?.[asmSel] || {};
-        const mpb   = entry.max_per_box || 20;
+  if (!plSel || !asmSel) return;
+  const entry = dataRaw[plSel]?.assemblies?.[asmSel] || {};
+  const mpb   = entry.max_per_box || 20;
 
-        const qInput = String(qty).trim();
-        const isNum  = /^\d+(\.\d+)?$/.test(qInput);
-        const q      = isNum ? Math.max(1, Math.min(mpb, Number(qInput))) : qInput.toUpperCase();
+  const qInput = String(qty).trim();
+  const isNum  = /^\d+(\.\d+)?$/.test(qInput);
+  const q      = isNum ? Math.max(1, Math.min(mpb, Number(qInput))) : qInput.toUpperCase();
 
-        const article_no = entry.article_no || '';
-        const draft = findDraft(plSel, asmSel);
-        if (draft) {
-          setItems(prev => prev.map(it => it.id===draft.id
-            ? {...it, entries: it.entries.concat([{qty:q}]), updatedAt: Date.now()}
-            : it));
-        } else {
-          setItems(prev => prev.concat([{
-  id: uid(),
-  pl: plSel,
-  asm: asmSel,
-  article_no,
-  written: false,
-  createdAt: Date.now(),
-  updatedAt: Date.now(),
-  status: { reported:false, orderWritten:false, printed:false }, // NEU
-  entries: [{ qty: q }]
-}]));
+  const article_no = entry.article_no || '';
+  const draft = findDraft(plSel, asmSel);
+
+  if (draft) {
+    setItems(prev => prev.map(it => it.id===draft.id
+      ? { ...it, entries: it.entries.concat([{ qty: q }]), updatedAt: Date.now() }
+      : it
+    ));
+  } else {
+    setItems(prev => prev.concat([{
+      id: uid(),
+      pl: plSel,
+      asm: asmSel,
+      article_no,
+      written: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      status: { reported:false, orderWritten:false, printed:false },
+      entries: [{ qty: q }]
+    }]));
+  }
+}; // ← wichtig: Funktion sauber schließen
+
 
       const removeOneEntry = (id, idx)=> setItems(prev => prev.map(it => it.id===id ? {...it, entries: it.entries.filter((_,i)=>i!==idx), updatedAt: Date.now()} : it));
       const clearEntries   = id       => setItems(prev => prev.map(it => it.id===id ? {...it, entries: [], updatedAt: Date.now()} : it));
@@ -724,77 +729,90 @@ function toggleStatus(id, key){
             {items.length===0 && (<div className="text-sm text-slate-600">Noch keine Einträge. Füge oben ein Gebinde hinzu.</div>)}
             <div className="space-y-3">
               {items.map(it=>(
-               <div
-  key={it.id}
-  className={
-    "rounded-xl border p-3 transition " +
-    (it.written ? "border-emerald-300 bg-emerald-50 " : "border-slate-200 bg-white ") +
-    ((it.status?.printed) ? "opacity-40 grayscale " : "")
-  }
->
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="font-semibold">{it.pl} {it.asm} {it.article_no? (<span className="text-slate-600 font-normal">{it.article_no}</span>) : null}</div>
-                      <EntryLine entries={it.entries}/>
-                      <div className="text-sm text-slate-700 mt-1">Gesamt: <span className="font-medium">{sumEntries(it.entries)}</span></div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Ghost onClick={()=>{ 
-                        if (!it.written) {
-                          const green = findGreen(it.pl,it.asm);
-                          if (!green) setItems(prev=> prev.map(x=> x.id===it.id ? {...x, written:true, updatedAt:Date.now()} : x));
-                          else {
-                            const appended = it.entries.map(e=> ({...e, isMerged:true}));
-                            setItems(prev=> prev
-                              .map(x=> x.id===green.id ? {...x, entries:x.entries.concat(appended), updatedAt:Date.now()} : x)
-                              .filter(x=> x.id!==it.id));
-                          }
-                        } else {
-                          setItems(prev=> prev.map(x=> x.id===it.id ? {...x, written:false, updatedAt:Date.now()} : x));
-                        }
-                      }}>{it.written? 'Als offen markieren' : 'Als fertig (grün)'}</Ghost>
-                      <Ghost onClick={()=> clearEntries(it.id)}>Mengen leeren</Ghost>
-                      <Danger onClick={()=> deleteItem(it.id)}>Eintrag löschen</Danger>
-                    </div>
-                  </div>
-                  {it.entries.length>0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {it.entries.map((e, idx)=>(
-                        <button key={idx} title="Menge entfernen" onClick={()=> removeOneEntry(it.id, idx)} className="text-xs bg-slate-100 hover:bg-slate-200 rounded-lg px-2 py-1">{e.qty} ×</button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </Section>
+  <div
+    key={it.id}
+    className={
+      "rounded-xl border p-3 transition " +
+      (it.written ? "border-emerald-300 bg-emerald-50 " : "border-slate-200 bg-white ") +
+      (it.status?.printed ? "opacity-40 grayscale " : "")
+    }
+  >
+    <div className="flex items-start justify-between gap-2">
+      <div>
+        <div className="font-semibold">
+          {it.pl} {it.asm} {it.article_no ? (<span className="text-slate-600 font-normal">{it.article_no}</span>) : null}
+        </div>
+        <EntryLine entries={it.entries}/>
+        <div className="text-sm text-slate-700 mt-1">
+          Gesamt: <span className="font-medium">{sumEntries(it.entries)}</span>
+        </div>
+      </div>
 
-          <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
-  <label className="inline-flex items-center gap-2">
-    <input
-      type="checkbox"
-      checked={!!(it.status?.reported)}
-      onChange={()=>toggleStatus(it.id, 'reported')}
-    />
-    Teile zurückgemeldet
-  </label>
-  <label className="inline-flex items-center gap-2">
-    <input
-      type="checkbox"
-      checked={!!(it.status?.orderWritten)}
-      onChange={()=>toggleStatus(it.id, 'orderWritten')}
-    />
-    Bestellung geschrieben
-  </label>
-  <label className="inline-flex items-center gap-2">
-    <input
-      type="checkbox"
-      checked={!!(it.status?.printed)}
-      onChange={()=>toggleStatus(it.id, 'printed')}
-    />
-    Bestellung gedruckt
-  </label>
-</div>
+      <div className="flex flex-col gap-2">
+        <Ghost onClick={()=>{
+          if (!it.written) {
+            const green = findGreen(it.pl,it.asm);
+            if (!green) setItems(prev=> prev.map(x=> x.id===it.id ? {...x, written:true, updatedAt:Date.now()} : x));
+            else {
+              const appended = it.entries.map(e=> ({...e, isMerged:true}));
+              setItems(prev=> prev
+                .map(x=> x.id===green.id ? {...x, entries:x.entries.concat(appended), updatedAt:Date.now()} : x)
+                .filter(x=> x.id!==it.id));
+            }
+          } else {
+            setItems(prev=> prev.map(x=> x.id===it.id ? {...x, written:false, updatedAt:Date.now()} : x));
+          }
+        }}>{it.written? 'Als offen markieren' : 'Als fertig (grün)'}</Ghost>
+
+        <Ghost onClick={()=> clearEntries(it.id)}>Mengen leeren</Ghost>
+        <Danger onClick={()=> deleteItem(it.id)}>Eintrag löschen</Danger>
+      </div>
+    </div>
+
+    {/* NEU: Häkchen pro Karte */}
+    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+      <label className="inline-flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={!!(it.status?.reported)}
+          onChange={()=>toggleStatus(it.id, 'reported')}
+        />
+        Teile zurückgemeldet
+      </label>
+      <label className="inline-flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={!!(it.status?.orderWritten)}
+          onChange={()=>toggleStatus(it.id, 'orderWritten')}
+        />
+        Bestellung geschrieben
+      </label>
+      <label className="inline-flex items-center gap-2" title="Gedruckte Karten werden ausgegraut (kann zurückgenommen werden)">
+        <input
+          type="checkbox"
+          checked={!!(it.status?.printed)}
+          onChange={()=>toggleStatus(it.id, 'printed')}
+        />
+        Bestellung gedruckt
+      </label>
+    </div>
+
+    {it.entries.length>0 && (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {it.entries.map((e, idx)=>(
+          <button
+            key={idx}
+            title="Menge entfernen"
+            onClick={()=> removeOneEntry(it.id, idx)}
+            className="text-xs bg-slate-100 hover:bg-slate-200 rounded-lg px-2 py-1"
+          >
+            {e.qty} ×
+          </button>
+        ))}
+      </div>
+    )}
+  </div>
+))}
 
           {/* Export */}
           <Section title="Export">
