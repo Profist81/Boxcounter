@@ -382,7 +382,16 @@
 
       const findGreen = (pl, asm)=> items.find(it=> it.pl===pl && it.asm===asm && it.written);
       const findDraft = (pl, asm)=> items.find(it=> it.pl===pl && it.asm===asm && !it.written);
-
+      
+      // --- Status toggeln (Teile zurückgemeldet / Bestellung geschrieben / gedruckt)
+function toggleStatus(id, key){
+  setItems(prev => prev.map(it => {
+    if (it.id !== id) return it;
+    const nextStatus = Object.assign({ reported:false, orderWritten:false, printed:false }, it.status || {});
+    nextStatus[key] = !nextStatus[key];
+    return { ...it, status: nextStatus, updatedAt: Date.now() };
+  }));
+}
       const onAddEntry = ()=>{
         if (!plSel || !asmSel) return;
         const entry = dataRaw[plSel]?.assemblies?.[asmSel] || {};
@@ -400,12 +409,16 @@
             : it));
         } else {
           setItems(prev => prev.concat([{
-            id: uid(), pl: plSel, asm: asmSel, article_no,
-            written:false, createdAt: Date.now(), updatedAt: Date.now(),
-            entries:[{qty:q}]
-          }]));
-        }
-      };
+  id: uid(),
+  pl: plSel,
+  asm: asmSel,
+  article_no,
+  written: false,
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+  status: { reported:false, orderWritten:false, printed:false }, // NEU
+  entries: [{ qty: q }]
+}]));
 
       const removeOneEntry = (id, idx)=> setItems(prev => prev.map(it => it.id===id ? {...it, entries: it.entries.filter((_,i)=>i!==idx), updatedAt: Date.now()} : it));
       const clearEntries   = id       => setItems(prev => prev.map(it => it.id===id ? {...it, entries: [], updatedAt: Date.now()} : it));
@@ -711,7 +724,14 @@
             {items.length===0 && (<div className="text-sm text-slate-600">Noch keine Einträge. Füge oben ein Gebinde hinzu.</div>)}
             <div className="space-y-3">
               {items.map(it=>(
-                <div key={it.id} className={"rounded-xl border p-3 "+(it.written? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white')}>
+               <div
+  key={it.id}
+  className={
+    "rounded-xl border p-3 transition " +
+    (it.written ? "border-emerald-300 bg-emerald-50 " : "border-slate-200 bg-white ") +
+    ((it.status?.printed) ? "opacity-40 grayscale " : "")
+  }
+>
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="font-semibold">{it.pl} {it.asm} {it.article_no? (<span className="text-slate-600 font-normal">{it.article_no}</span>) : null}</div>
@@ -748,6 +768,33 @@
               ))}
             </div>
           </Section>
+
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+  <label className="inline-flex items-center gap-2">
+    <input
+      type="checkbox"
+      checked={!!(it.status?.reported)}
+      onChange={()=>toggleStatus(it.id, 'reported')}
+    />
+    Teile zurückgemeldet
+  </label>
+  <label className="inline-flex items-center gap-2">
+    <input
+      type="checkbox"
+      checked={!!(it.status?.orderWritten)}
+      onChange={()=>toggleStatus(it.id, 'orderWritten')}
+    />
+    Bestellung geschrieben
+  </label>
+  <label className="inline-flex items-center gap-2">
+    <input
+      type="checkbox"
+      checked={!!(it.status?.printed)}
+      onChange={()=>toggleStatus(it.id, 'printed')}
+    />
+    Bestellung gedruckt
+  </label>
+</div>
 
           {/* Export */}
           <Section title="Export">
