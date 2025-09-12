@@ -407,7 +407,7 @@
 
         const qInput = String(qty).trim();
         const isNum  = /^\d+(\.\d+)?$/.test(qInput);
-        const q      = isNum ? Math.max(1, Math.min(mpb, Number(qInput))) : qInput.toUpperCase();
+        const q = isNum ? Math.max(1, Number(qInput)) : qInput.toUpperCase();
 
         const article_no = entry.article_no || '';
         const draft = findDraft(plSel, asmSel);
