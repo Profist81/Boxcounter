@@ -9,12 +9,13 @@
 
   <meta name="theme-color" content="#4f46e5">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
 
   <title>BoxCounterMini – Smartphone HTML (PWA + IndexedDB)</title>
 
-  <!-- Tailwind (nur für Dev; Prod später via Build) -->
+  <!-- Tailwind (Dev) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -34,13 +35,13 @@
   <!-- Babel Standalone (nur Dev) -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- jsPDF (Export) + regenerator-runtime (Safari Fix) -->
+  <!-- jsPDF + regenerator-runtime -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://unpkg.com/regenerator-runtime@0.14.1/runtime.js"></script>
 
   <style>html, body { background: #0f172a0d; }</style>
 
-  <!-- Hilfsfunktion: störende Anführungszeichen ( " „ ” ) am Anfang/Ende entfernen -->
+  <!-- kleine Hilfsfunktion -->
   <script>
     function dequote(v){
       return String(v ?? '').trim().replace(/^["\u201C\u201D]|["\u201C\u201D]$/g, '');
@@ -55,7 +56,7 @@
   <script type="text/babel" data-presets="react,typescript" data-plugins="proposal-optional-chaining,proposal-nullish-coalescing-operator">
     const { useEffect, useState, useMemo } = React;
 
-    // ---------- IndexedDB Helper (ohne async/await) ----------
+    // ---------- IndexedDB Helper ----------
     const IDB = (function(){
       const support = typeof indexedDB !== 'undefined';
       let dbp = null;
@@ -103,81 +104,69 @@
     const downloadFile = (filename, text, type='text/plain') => { const blob = new Blob([text], {type}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); };
     const copyText = text => { try{ if(navigator.clipboard?.writeText){ navigator.clipboard.writeText(text); return true; } }catch(_){} const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.style.position='fixed'; ta.style.opacity='0'; ta.select(); document.execCommand('copy'); document.body.removeChild(ta); return true; };
 
+    // ---------- CSV Parser ----------
     function parseCSV(text){
-  const raw0 = String(text||'');
-  if (!raw0.trim()) return [];
+      const raw0 = String(text||'');
+      if (!raw0.trim()) return [];
 
-  // Zeilen vereinheitlichen
-  const raw = raw0
-    .replace(/^\uFEFF/, '')    // BOM
-    .replace(/\r/g,'')
-    .replace(/\\r/g,'')
-    .replace(/\\n/g,'\n')
-    .replace(/[\u2028\u2029]/g,'\n')
-    .trim();
+      const raw = raw0
+        .replace(/^\uFEFF/, '')     // BOM
+        .replace(/\r/g,'')
+        .replace(/\\r/g,'')
+        .replace(/\\n/g,'\n')
+        .replace(/[\u2028\u2029]/g,'\n')
+        .trim();
 
-  const lines = raw.split(/\n+/);
-  if (!lines.length) return [];
+      const lines = raw.split(/\n+/);
+      if (!lines.length) return [];
 
-  // Trennzeichen , ; oder Tab
-  const split = (line)=> line.split(/\s*[,;\t]\s*/);
+      const split = line => line.split(/\s*[,;\t]\s*/);
 
-  // Kopfzeile erkennen
-  let headerParts = split(lines[0]||'').map(s=>s.trim().toLowerCase());
-  const looksLikeHeader =
-    headerParts.some(s => /artikel|baugruppe|bauteil|max|product|assembly|line/.test(s));
-  if (looksLikeHeader) {
-    lines.shift(); // echte Kopfzeile entfernen
-  } else {
-    headerParts = ['artikelnummer','produktlinie','baugruppe','max_per_box'];
-  }
+      // Kopfzeile erkennen
+      let headerParts = split(lines[0]||'').map(s=>s.trim().toLowerCase());
+      const looksLikeHeader = headerParts.some(s => /artikel|baugruppe|bauteil|max|product|assembly|line/.test(s));
+      if (looksLikeHeader) lines.shift(); else headerParts = ['artikelnummer','produktlinie','baugruppe','max_per_box'];
 
-  // Index-Helfer
-  const idx = (re)=> headerParts.findIndex(c=>re.test(c));
-  let idxArt = idx(/artikel\s*(nr|nummer)?|art[\.\s_-]*nr|article/);
-  let idxPL  = idx(/produktlinie|product\s*line|^pl$/);
-  let idxBG  = idx(/^baugruppe$|assembly|^bg$/);
-  let idxBT  = idx(/bauteil|komponente|teilbezeichnung/);
-  let idxMax = idx(/max[_\s]*per[_\s]*box|max|pro\s*gebinde|menge/);
+      const idx = re => headerParts.findIndex(c=>re.test(c));
+      let idxArt = idx(/artikel\s*(nr|nummer)?|art[\.\s_-]*nr|article/);
+      let idxPL  = idx(/produktlinie|product\s*line|^pl$/);
+      let idxBG  = idx(/^baugruppe$|assembly|^bg$/);
+      let idxBT  = idx(/bauteil|komponente|teilbezeichnung/);
+      let idxMax = idx(/max[_\s]*per[_\s]*box|max|pro\s*gebinde|menge/);
 
-  // Fallbacks
-  if (idxArt<0) idxArt = 0;
-  if (idxPL<0 && idxBG<0) idxBG = 1;
-  if (idxBT<0) idxBT = 2;
-  if (idxMax<0) idxMax = headerParts.length-1;
+      if (idxArt<0) idxArt = 0;
+      if (idxPL<0 && idxBG<0) idxBG = 1;
+      if (idxBT<0) idxBT = 2;
+      if (idxMax<0) idxMax = headerParts.length-1;
 
-  const idxProdline = (idxPL>=0) ? idxPL : idxBG; // PL aus PL oder BG
-  const idxAssembly = (idxBT>=0) ? idxBT : idxBG; // ASM aus BT oder BG
+      const idxProdline = (idxPL>=0) ? idxPL : idxBG;
+      const idxAssembly = (idxBT>=0) ? idxBT : idxBG;
 
-  const rows = [];
-  lines.forEach((line)=>{
-    if (!line.trim()) return;
+      const rows = [];
+      lines.forEach(line=>{
+        if (!line.trim()) return;
+        const parts = split(line).map(s => dequote(s));
 
-    // Teile dequoten
-    const parts = split(line).map(s => dequote(s));
+        const pl  = dequote(parts[idxProdline] ?? '');
+        const asm = dequote(parts[idxAssembly] ?? '');
+        const art = dequote(parts[idxArt] ?? '');
 
-    const pl  = dequote(parts[idxProdline] ?? '');
-    const asm = dequote(parts[idxAssembly] ?? '');
-    const art = dequote(parts[idxArt] ?? '');
+        const maxLabel = dequote(parts[idxMax] ?? ''); // 20, K, 30/30 …
+        const m = maxLabel.match(/\d+/);
+        const max_per_box = m ? parseInt(m[0], 10) : 1; // Fallback 1
 
-    // Max: Label (für Anzeige) + Zahl (für Logik)
-    const maxLabel = dequote(parts[idxMax] ?? '');    // z.B. 20, K, 30/30
-    const m = maxLabel.match(/\d+/);                  // erste Zahl
-    const max_per_box = m ? parseInt(m[0], 10) : 1;   // Fallback 1
+        if (!pl || !asm) return;
+        rows.push({
+          produktlinie: pl,
+          baugruppe: asm,
+          artikelnummer: art,
+          max_per_box,
+          max_label: maxLabel || String(max_per_box)
+        });
+      });
 
-    if (!pl || !asm) return;
-
-    rows.push({
-      produktlinie: pl,
-      baugruppe: asm,
-      artikelnummer: art,
-      max_per_box,
-      max_label: maxLabel || String(max_per_box)
-    });
-  });
-
-  return rows;
-}
+      return rows;
+    }
 
     // ---------- Startdaten ----------
     const START_DATA = {
@@ -273,7 +262,7 @@
 
       const [qty, setQty] = useState(1);
       const [alsoDeleteItemsFlag, setAlsoDeleteItemsFlag] = useState(true);
-      const [lastDeletion, setLastDeletion] = useState(null); // ← nur EINMAL deklariert
+      const [lastDeletion, setLastDeletion] = useState(null); // nur einmal
 
       // Reset/Factory
       function resetMasterToStart(){
@@ -310,7 +299,7 @@
         const pl  = normalizeName(mPl||'').trim();
         const asm = normalizeName(mAsm||'').trim();
         const art = (mArt||'').trim();
-        const maxRaw = String(mMax).trim();    // kann "K","P","30/30" etc. sein
+        const maxRaw = String(mMax).trim();
         const isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
         const maxNum = isNum ? Math.max(1, Number(maxRaw)) : 20;
         if (!pl || !asm) { alert('Produktlinie und Baugruppe sind Pflicht.'); return; }
@@ -390,52 +379,59 @@
         return it ? it.max_per_box : 20;
       }, [plSel, asmSel, dataRaw]);
 
-      useEffect(()=>{ if (typeof qty==='number') { if (qty>maxForCurrent) setQty(maxForCurrent); if (qty<1) setQty(1); } }, [maxForCurrent]);
+      useEffect(()=>{ 
+        if (typeof qty==='number') {
+          if (qty>maxForCurrent) setQty(maxForCurrent); 
+          if (qty<1) setQty(1); 
+        }
+      }, [maxForCurrent]);
 
       const findGreen = (pl, asm)=> items.find(it=> it.pl===pl && it.asm===asm && it.written);
       const findDraft = (pl, asm)=> items.find(it=> it.pl===pl && it.asm===asm && !it.written);
-      
-      // --- Status toggeln (Teile zurückgemeldet / Bestellung geschrieben / gedruckt)
-function toggleStatus(id, key){
-  setItems(prev => prev.map(it => {
-    if (it.id !== id) return it;
-    const nextStatus = Object.assign({ reported:false, orderWritten:false, printed:false }, it.status || {});
-    nextStatus[key] = !nextStatus[key];
-    return { ...it, status: nextStatus, updatedAt: Date.now() };
-  }));
-}
+
+      // Status toggeln
+      function toggleStatus(id, key){
+        setItems(prev => prev.map(it => {
+          if (it.id !== id) return it;
+          const nextStatus = Object.assign({ reported:false, orderWritten:false, printed:false }, it.status || {});
+          nextStatus[key] = !nextStatus[key];
+          return { ...it, status: nextStatus, updatedAt: Date.now() };
+        }));
+      }
+
+      // EINMAL KORREKT: onAddEntry
       const onAddEntry = ()=>{
-  if (!plSel || !asmSel) return;
-  const entry = dataRaw[plSel]?.assemblies?.[asmSel] || {};
-  const mpb   = entry.max_per_box || 20;
+        if (!plSel || !asmSel) return;
+        const entry = dataRaw[plSel]?.assemblies?.[asmSel] || {};
+        const mpb   = entry.max_per_box || 20;
 
-  const qInput = String(qty).trim();
-  const isNum  = /^\d+(\.\d+)?$/.test(qInput);
-  const q      = isNum ? Math.max(1, Math.min(mpb, Number(qInput))) : qInput.toUpperCase();
+        const qInput = String(qty).trim();
+        const isNum  = /^\d+(\.\d+)?$/.test(qInput);
+        const q      = isNum ? Math.max(1, Math.min(mpb, Number(qInput))) : qInput.toUpperCase();
 
-  const article_no = entry.article_no || '';
-  const draft = findDraft(plSel, asmSel);
+        const article_no = entry.article_no || '';
+        const draft = findDraft(plSel, asmSel);
 
-  if (draft) {
-    setItems(prev => prev.map(it => it.id===draft.id
-      ? { ...it, entries: it.entries.concat([{ qty: q }]), updatedAt: Date.now() }
-      : it
-    ));
-  } else {
-    setItems(prev => prev.concat([{
-      id: uid(),
-      pl: plSel,
-      asm: asmSel,
-      article_no,
-      written: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      status: { reported:false, orderWritten:false, printed:false },
-      entries: [{ qty: q }]
-    }]));
-  }
-}; // ← wichtig: Funktion sauber schließen
-
+        if (draft) {
+          setItems(prev => prev.map(it =>
+            it.id===draft.id
+              ? { ...it, entries: it.entries.concat([{ qty: q }]), updatedAt: Date.now() }
+              : it
+          ));
+        } else {
+          setItems(prev => prev.concat([{
+            id: uid(),
+            pl: plSel,
+            asm: asmSel,
+            article_no,
+            written: false,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            status: { reported:false, orderWritten:false, printed:false },
+            entries: [{ qty: q }]
+          }]));
+        }
+      };
 
       const removeOneEntry = (id, idx)=> setItems(prev => prev.map(it => it.id===id ? {...it, entries: it.entries.filter((_,i)=>i!==idx), updatedAt: Date.now()} : it));
       const clearEntries   = id       => setItems(prev => prev.map(it => it.id===id ? {...it, entries: [], updatedAt: Date.now()} : it));
@@ -617,7 +613,6 @@ function toggleStatus(id, key){
         dlIcon512:  ()=> (createIconCanvas(512).toDataURL('image/png')),
       };
 
-      // Wenn Manifest fehlt: nur im http(s) Kontext dynamisch setzen
       if (location.protocol.startsWith('http')) {
         try {
           fetch('./manifest.webmanifest', {method:'HEAD'}).catch(()=>{}).then(res=>{
@@ -631,7 +626,7 @@ function toggleStatus(id, key){
         } catch(_){}
       }
 
-      // UI Komponenten
+      // UI Listen
       const plList = Object.keys(dataRaw);
       const asmList = plSel ? Object.keys(dataRaw[plSel]?.assemblies||{}) : [];
       const artForSel = (plSel && asmSel) ? (dataRaw[plSel]?.assemblies?.[asmSel]?.article_no || '') : '';
@@ -741,90 +736,85 @@ function toggleStatus(id, key){
             {items.length===0 && (<div className="text-sm text-slate-600">Noch keine Einträge. Füge oben ein Gebinde hinzu.</div>)}
             <div className="space-y-3">
               {items.map(it=>(
-  <div
-    key={it.id}
-    className={
-      "rounded-xl border p-3 transition " +
-      (it.written ? "border-emerald-300 bg-emerald-50 " : "border-slate-200 bg-white ") +
-      (it.status?.printed ? "opacity-40 grayscale " : "")
-    }
-  >
-    <div className="flex items-start justify-between gap-2">
-      <div>
-        <div className="font-semibold">
-          {it.pl} {it.asm} {it.article_no ? (<span className="text-slate-600 font-normal">{it.article_no}</span>) : null}
-        </div>
-        <EntryLine entries={it.entries}/>
-        <div className="text-sm text-slate-700 mt-1">
-          Gesamt: <span className="font-medium">{sumEntries(it.entries)}</span>
-        </div>
-      </div>
+                <div
+                  key={it.id}
+                  className={
+                    "rounded-xl border p-3 transition " +
+                    (it.written ? "border-emerald-300 bg-emerald-50 " : "border-slate-200 bg-white ") +
+                    ((it.status?.printed) ? "opacity-40 grayscale " : "")
+                  }
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <div className="font-semibold">
+                        {it.pl} {it.asm} {it.article_no? (<span className="text-slate-600 font-normal">{it.article_no}</span>) : null}
+                      </div>
+                      <EntryLine entries={it.entries}/>
+                      <div className="text-sm text-slate-700 mt-1">
+                        Gesamt: <span className="font-medium">{sumEntries(it.entries)}</span>
+                      </div>
 
-      <div className="flex flex-col gap-2">
-        <Ghost onClick={()=>{
-          if (!it.written) {
-            const green = findGreen(it.pl,it.asm);
-            if (!green) setItems(prev=> prev.map(x=> x.id===it.id ? {...x, written:true, updatedAt:Date.now()} : x));
-            else {
-              const appended = it.entries.map(e=> ({...e, isMerged:true}));
-              setItems(prev=> prev
-                .map(x=> x.id===green.id ? {...x, entries:x.entries.concat(appended), updatedAt:Date.now()} : x)
-                .filter(x=> x.id!==it.id));
-            }
-          } else {
-            setItems(prev=> prev.map(x=> x.id===it.id ? {...x, written:false, updatedAt:Date.now()} : x));
-          }
-        }}>{it.written? 'Als offen markieren' : 'Als fertig (grün)'}</Ghost>
+                      {/* Checkboxen (Status) */}
+                      <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+                        <label className="inline-flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={!!(it.status?.reported)}
+                            onChange={()=>toggleStatus(it.id, 'reported')}
+                          />
+                          Teile zurückgemeldet
+                        </label>
+                        <label className="inline-flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={!!(it.status?.orderWritten)}
+                            onChange={()=>toggleStatus(it.id, 'orderWritten')}
+                          />
+                          Bestellung geschrieben
+                        </label>
+                        <label className="inline-flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={!!(it.status?.printed)}
+                            onChange={()=>toggleStatus(it.id, 'printed')}
+                          />
+                          Bestellung gedruckt
+                        </label>
+                      </div>
+                    </div>
 
-        <Ghost onClick={()=> clearEntries(it.id)}>Mengen leeren</Ghost>
-        <Danger onClick={()=> deleteItem(it.id)}>Eintrag löschen</Danger>
-      </div>
-    </div>
+                    <div className="flex flex-col gap-2">
+                      <Ghost onClick={()=>{ 
+                        if (!it.written) {
+                          const green = findGreen(it.pl,it.asm);
+                          if (!green) setItems(prev=> prev.map(x=> x.id===it.id ? {...x, written:true, updatedAt:Date.now()} : x));
+                          else {
+                            const appended = it.entries.map(e=> ({...e, isMerged:true}));
+                            setItems(prev=> prev
+                              .map(x=> x.id===green.id ? {...x, entries:x.entries.concat(appended), updatedAt:Date.now()} : x)
+                              .filter(x=> x.id!==it.id));
+                          }
+                        } else {
+                          setItems(prev=> prev.map(x=> x.id===it.id ? {...x, written:false, updatedAt:Date.now()} : x));
+                        }
+                      }}>{it.written? 'Als offen markieren' : 'Als fertig (grün)'}</Ghost>
 
-    {/* NEU: Häkchen pro Karte */}
-    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
-      <label className="inline-flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={!!(it.status?.reported)}
-          onChange={()=>toggleStatus(it.id, 'reported')}
-        />
-        Teile zurückgemeldet
-      </label>
-      <label className="inline-flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={!!(it.status?.orderWritten)}
-          onChange={()=>toggleStatus(it.id, 'orderWritten')}
-        />
-        Bestellung geschrieben
-      </label>
-      <label className="inline-flex items-center gap-2" title="Gedruckte Karten werden ausgegraut (kann zurückgenommen werden)">
-        <input
-          type="checkbox"
-          checked={!!(it.status?.printed)}
-          onChange={()=>toggleStatus(it.id, 'printed')}
-        />
-        Bestellung gedruckt
-      </label>
-    </div>
+                      <Ghost onClick={()=> clearEntries(it.id)}>Mengen leeren</Ghost>
+                      <Danger onClick={()=> deleteItem(it.id)}>Eintrag löschen</Danger>
+                    </div>
+                  </div>
 
-    {it.entries.length>0 && (
-      <div className="mt-2 flex flex-wrap gap-2">
-        {it.entries.map((e, idx)=>(
-          <button
-            key={idx}
-            title="Menge entfernen"
-            onClick={()=> removeOneEntry(it.id, idx)}
-            className="text-xs bg-slate-100 hover:bg-slate-200 rounded-lg px-2 py-1"
-          >
-            {e.qty} ×
-          </button>
-        ))}
-      </div>
-    )}
-  </div>
-))}
+                  {it.entries.length>0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {it.entries.map((e, idx)=>(
+                        <button key={idx} title="Menge entfernen" onClick={()=> removeOneEntry(it.id, idx)} className="text-xs bg-slate-100 hover:bg-slate-200 rounded-lg px-2 py-1">{e.qty} ×</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Section>
 
           {/* Export */}
           <Section title="Export">
@@ -881,7 +871,6 @@ function toggleStatus(id, key){
             <p className="text-xs text-slate-500">Hinweis: Service Worker funktionieren nur auf <b>HTTPS</b> oder <b>localhost</b>. In-App-Browser (z. B. WhatsApp) blockieren oft die Installation.</p>
           </Section>
 
-          {/* Zurücksetzen */}
           <Section title="Zurücksetzen">
             <div className="flex flex-wrap gap-2">
               <Danger onClick={resetMasterToStart}>Stammdaten → Startdaten</Danger>
@@ -904,6 +893,7 @@ function toggleStatus(id, key){
   <script>
     window.addEventListener('error', e => console.error('Global JS error:', e.message, e.filename, e.lineno, e.colno, e.error));
     window.addEventListener('unhandledrejection', e => console.error('Unhandled promise rejection:', e.reason));
+    console.log('Diagnostics hooked: Babel-App geladen, gleich sollte React booten…');
   </script>
 
   <!-- Service Worker nur unter http/https -->
