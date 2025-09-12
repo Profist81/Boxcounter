@@ -379,10 +379,10 @@
         return it ? it.max_per_box : 20;
       }, [plSel, asmSel, dataRaw]);
 
-      useEffect(()=>{ 
-        if (typeof qty==='number') {
-          if (qty>maxForCurrent) setQty(maxForCurrent); 
-          if (qty<1) setQty(1); 
+      useEffect(()=>{
+  const n = Number(qty);
+  if (!Number.isNaN(n) && n < 1) setQty(1);
+}, [qty]); 
         }
       }, [maxForCurrent]);
 
