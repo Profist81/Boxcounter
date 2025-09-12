@@ -379,12 +379,11 @@
         return it ? it.max_per_box : 20;
       }, [plSel, asmSel, dataRaw]);
 
-      useEffect(()=>{
+      // Untere Grenze 1, aber KEINE Max-Grenze mehr (unendlich zulassen)
+useEffect(() => {
   const n = Number(qty);
   if (!Number.isNaN(n) && n < 1) setQty(1);
-}, [qty]); 
-        }
-      }, [maxForCurrent]);
+}, [qty]);
 
       const findGreen = (pl, asm)=> items.find(it=> it.pl===pl && it.asm===asm && it.written);
       const findDraft = (pl, asm)=> items.find(it=> it.pl===pl && it.asm===asm && !it.written);
