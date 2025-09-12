@@ -380,6 +380,7 @@
       }, [plSel, asmSel, dataRaw]);
 
       // Untere Grenze 1, aber KEINE Max-Grenze mehr (unendlich zulassen)
+// Untere Grenze 1, KEINE Obergrenze mehr (unendlich möglich)
 useEffect(() => {
   const n = Number(qty);
   if (!Number.isNaN(n) && n < 1) setQty(1);
