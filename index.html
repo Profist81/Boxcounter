@@ -601,22 +601,24 @@ function exportMasterJSON() {
 
       const onCopyAll = ()=>{ const ok = copyText(buildAllText()); if (ok) alert('Alle Zeilen kopiert.'); };
       const onDownloadTXT = ()=> downloadFile('boxcountermini.txt', buildAllText());
-      const onDownloadCSV = ()=>{
+    // CSV-Export: Excel-freundlich (UTF-8 + BOM, richtige Anführungszeichen)
+const onDownloadCSV = () => {
   const rows = [];
   rows.push(['datum','produktlinie','baugruppe','artikelnummer','gebinde','gesamt'].join(';'));
-  items.forEach(it=>{
+
+  items.forEach(it => {
     rows.push([
-      dateText||'',
+      dateText || '',
       it.pl,
       it.asm,
-      it.article_no||'',
+      it.article_no || '',
       dashTextFromEntries(it.entries),
       String(sumEntries(it.entries))
-    ].map(x=> '"'+String(x).replace(/"/g,'""')+'"').join(';'));
+    ].map(x => '"' + String(x).replace(/"/g, '""') + '"').join(';'));
   });
 
-  // UTF-8 BOM hinzufügen (wichtiger Trick für Excel!)
-  const bom = "\uFEFF";
+  // BOM voranstellen, damit Excel UTF-8 erkennt
+  const bom = '\uFEFF';
   downloadFile('boxcountermini.csv', bom + rows.join('\n'), 'text/csv');
 };
       const onDownloadPDF = ()=>{
