@@ -291,10 +291,10 @@
       }
 
       // Manuell hinzufügen
-      const [mPl,  setMPl]  = React.useState('');
-const [mAsm, setMAsm] = React.useState('');
-const [mArt, setMArt] = React.useState('');
-const [mMax, setMMax] = React.useState(20);
+      const [mPl,  setMPl]  = useState('');
+const [mAsm, setMAsm] = useState('');
+const [mArt, setMArt] = useState('');
+const [mMax, setMMax] = useState(20);
       function onManualSave(){
   const plBase  = normalizeName(mPl||'').trim();
   const asmBase = normalizeName(mAsm||'').trim();
@@ -510,35 +510,36 @@ useEffect(() => {
             let added = 0, firstPL='', firstASM='';
 
             rows.forEach(r=>{
-              // ...
-const pl  = normalizeName(r.produktlinie||'');
-const asmBase = normalizeName(r.baugruppe||'');
-const art = (r.artikelnummer || '').trim();
-if (!pl || !asmBase) return;
+  const pl      = normalizeName(r.produktlinie||'');
+  const asmBase = normalizeName(r.baugruppe||'');
+  const art     = (r.artikelnummer || '').trim();
+  if (!pl || !asmBase) return;
 
-next[pl] = next[pl] || { assemblies:{} };
-let asmKey = asmBase;
+  next[pl] = next[pl] || { assemblies:{} };
+  let asmKey = asmBase;
 
-// Prüfen, ob gleicher Baugruppen-Name bereits existiert und Art.-Nr. abweicht
-const exists = next[pl].assemblies[asmKey];
-if (exists && (exists.article_no||'').trim() && art &&
-    exists.article_no.trim() !== art) {
-  asmKey = `${asmBase} (${art})`;
-}
+  // gleicher Baugruppenname vorhanden, aber andere Art.-Nr. -> Key erweitern
+  const exists = next[pl].assemblies[asmKey];
+  if (exists && (exists.article_no||'').trim() && art &&
+      exists.article_no.trim() !== art) {
+    asmKey = `${asmBase} (${art})`;
+  }
 
-const cur  = next[pl].assemblies[asmKey] || {};
+  const cur    = next[pl].assemblies[asmKey] || {};
+  const maxRaw = String(r.max_label ?? r.max_per_box ?? '').trim();
+  const isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
+  const maxNum = isNum ? Math.max(1, Number(maxRaw))
+                       : Math.max(1, Number(r.max_per_box || cur.max_per_box || 20));
 
-// max_* wie bei dir bisher:
-const maxRaw = String(r.max_label ?? r.max_per_box ?? '').trim();
-const isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
-const maxNum = isNum ? Math.max(1, Number(maxRaw)) : Math.max(1, Number(r.max_per_box || cur.max_per_box || 20));
+  next[pl].assemblies[asmKey] = {
+    article_no: art || cur.article_no || '',
+    max_per_box: maxNum,
+    max_label: maxRaw || cur.max_label || String(maxNum)
+  };
 
-next[pl].assemblies[asmKey] = {
-  article_no: art || cur.article_no || '',
-  max_per_box: maxNum,
-  max_label: maxRaw || cur.max_label || String(maxNum)
-};
-// ...
+  added++;
+  if (!firstPL) { firstPL = pl; firstASM = asmKey; }
+});  // <-- wichtig: forEach schließen
 
             const nextNorm = normalizeData(next);
             if (!added || !Object.keys(nextNorm).length) {
@@ -568,7 +569,7 @@ function exportMasterCSV() {
       const mpb  = (typeof it.max_per_box==='number' ? it.max_per_box : '');
       const mLbl = (it.max_label ?? (mpb ? String(mpb) : ''));
       const line = [pl, asm, art, mpb, mLbl]
-        .map(x => `"${String(x).replace(/"/g,'\\"')}"`)
+        .map(x => `"${String(x).replace(/"/g,'""')}"`)
         .join(';');
       rows.push(line);
     });
