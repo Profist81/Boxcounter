@@ -291,12 +291,16 @@
       }
 
       // Manuell hinzufügen
+      const [mPl,  setMPl]  = React.useState('');
+const [mAsm, setMAsm] = React.useState('');
+const [mArt, setMArt] = React.useState('');
+const [mMax, setMMax] = React.useState(20);
       function onManualSave(){
   const plBase  = normalizeName(mPl||'').trim();
   const asmBase = normalizeName(mAsm||'').trim();
   const art     = (mArt||'').trim();
 
-  const maxRaw = String(mMax).trim();           // darf "K", "P", "30/30" etc. sein
+  const maxRaw = String(mMax).trim();            // darf "K", "P", "30/30" etc. sein
   const isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
   const maxNum = isNum ? Math.max(1, Number(maxRaw)) : 20;
 
@@ -306,14 +310,11 @@
     const next = JSON.parse(JSON.stringify(prev||{}));
     next[plBase] = next[plBase] || { assemblies:{} };
 
-    // ❶ Standard-Key wäre die reine Baugruppe
+    // Standard-Key = reine Baugruppe
     let asmKey = asmBase;
 
-    // ❷ Gibt es schon dieselbe Baugruppe?
+    // Wenn es den Key schon gibt und die Artikelnummer abweicht -> Key erweitern
     const existing = next[plBase].assemblies[asmKey];
-
-    // ❸ Falls vorhanden UND die Artikelnummer unterschiedlich ist:
-    //     -> Key um Artikelnummer erweitern, z. B. "Fußteil (61-90-35)"
     if (existing && (existing.article_no||'').trim() && art &&
         existing.article_no.trim() !== art) {
       asmKey = `${asmBase} (${art})`;
