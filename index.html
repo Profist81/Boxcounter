@@ -526,6 +526,36 @@ useEffect(() => {
         reader.readAsText(file);
       };
 
+      // --- Aktuelle Stammdaten exportieren (CSV/JSON) ---
+function exportMasterCSV() {
+  const rows = [];
+  // Kopfzeile (du kannst Spaltenreihenfolge anpassen)
+  rows.push(['produktlinie','baugruppe','artikelnummer','max_per_box','max_label'].join(';'));
+  Object.keys(dataRaw||{}).forEach(pl=>{
+    const asms = dataRaw[pl]?.assemblies || {};
+    Object.keys(asms).forEach(asm=>{
+      const it = asms[asm]||{};
+      const art  = it.article_no || '';
+      const mpb  = (typeof it.max_per_box==='number' ? it.max_per_box : '');
+      const mLbl = (it.max_label ?? (mpb ? String(mpb) : ''));
+      const line = [pl, asm, art, mpb, mLbl]
+        .map(x => `"${String(x).replace(/"/g,'\\"')}"`)
+        .join(';');
+      rows.push(line);
+    });
+  });
+  downloadFile('stammdaten-aktuell.csv', rows.join('\n'), 'text/csv');
+}
+
+function exportMasterJSON() {
+  const payload = { version: 1, ts: Date.now(), dataRaw };
+  downloadFile(
+    'stammdaten-aktuell.json',
+    JSON.stringify(payload, null, 2),
+    'application/json'
+  );
+}
+
       // Anzeige-Helfer
       const buildAllText = ()=>{
         const lines = [];
@@ -828,20 +858,42 @@ useEffect(() => {
           </Section>
 
           {/* CSV Import */}
-          <Section title="Stammdaten importieren (CSV)" right={
-            <Ghost onClick={()=>{
-              const sample = [
-                'produktlinie,baugruppe,artikelnummer,max_per_box',
-                'Salsa,Untergestell,57-90-10,20',
-                'Salsa,Rückenteil,57-90-12,15',
-                'Sensai,Rückenteil,61-90-01-V4,25'
-              ].join('\n');
-              downloadFile('stammdaten-vorlage.csv', sample, 'text/csv');
-            }}>Vorlage herunterladen</Ghost>
-          }>
-            <input type="file" accept=".csv,.txt" onChange={e=>{ onImportCSV(e.target.files && e.target.files[0]); e.target.value=''; }} className="block w-full text-sm text-slate-700 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
-            <p className="text-xs text-slate-500 mt-2">Erwartete Spalten: produktlinie,baugruppe,artikelnummer,max_per_box • Trennzeichen , oder ;</p>
-          </Section>
+          <Section
+  title="Stammdaten importieren / exportieren (CSV)"
+  right={
+    <div className="flex gap-2">
+      <Ghost
+        onClick={()=>{
+          // LEERE VORLAGE (nur Beispielspalten)
+          const sample = [
+            'produktlinie,baugruppe,artikelnummer,max_per_box,max_label',
+          ].join('\n');
+          downloadFile('stammdaten-vorlage-leer.csv', sample, 'text/csv');
+        }}
+      >
+        Vorlage (leer)
+      </Ghost>
+
+      <Ghost onClick={exportMasterCSV}>
+        Aktuelle Stammdaten (CSV)
+      </Ghost>
+
+      <Ghost onClick={exportMasterJSON}>
+        Aktuelle Stammdaten (JSON)
+      </Ghost>
+    </div>
+  }
+>
+  <input
+    type="file"
+    accept=".csv,.txt"
+    onChange={e=>{ onImportCSV(e.target.files && e.target.files[0]); e.target.value=''; }}
+    className="block w-full text-sm text-slate-700 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+  />
+  <p className="text-xs text-slate-500 mt-2">
+    Erwartete Spalten: produktlinie,baugruppe,artikelnummer,max_per_box,max_label • Trennzeichen , oder ;
+  </p>
+</Section>
 
           {/* Inventar verwalten */}
           <Section title="Inventar verwalten (Baugruppe löschen)">
