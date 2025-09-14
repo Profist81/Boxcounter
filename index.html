@@ -602,14 +602,23 @@ function exportMasterJSON() {
       const onCopyAll = ()=>{ const ok = copyText(buildAllText()); if (ok) alert('Alle Zeilen kopiert.'); };
       const onDownloadTXT = ()=> downloadFile('boxcountermini.txt', buildAllText());
       const onDownloadCSV = ()=>{
-        const rows = [];
-        rows.push(['datum','produktlinie','baugruppe','artikelnummer','gebinde','gesamt'].join(';'));
-        items.forEach(it=>{
-          rows.push([ dateText||'', it.pl, it.asm, it.article_no||'', dashTextFromEntries(it.entries), String(sumEntries(it.entries)) ]
-            .map(x=> '"'+String(x).replace(/"/g,'\\"')+'"').join(';'));
-        });
-        downloadFile('boxcountermini.csv', rows.join('\n'), 'text/csv');
-      };
+  const rows = [];
+  rows.push(['datum','produktlinie','baugruppe','artikelnummer','gebinde','gesamt'].join(';'));
+  items.forEach(it=>{
+    rows.push([
+      dateText||'',
+      it.pl,
+      it.asm,
+      it.article_no||'',
+      dashTextFromEntries(it.entries),
+      String(sumEntries(it.entries))
+    ].map(x=> '"'+String(x).replace(/"/g,'""')+'"').join(';'));
+  });
+
+  // UTF-8 BOM hinzufügen (wichtiger Trick für Excel!)
+  const bom = "\uFEFF";
+  downloadFile('boxcountermini.csv', bom + rows.join('\n'), 'text/csv');
+};
       const onDownloadPDF = ()=>{
         const jsPDF = window.jspdf && window.jspdf.jsPDF;
         if (!jsPDF) { alert('jsPDF nicht geladen'); return; }
