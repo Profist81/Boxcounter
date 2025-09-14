@@ -291,35 +291,53 @@
       }
 
       // Manuell hinzufügen
-      const [mPl,setMPl]   = useState('');
-      const [mAsm,setMAsm] = useState('');
-      const [mArt,setMArt] = useState('');
-      const [mMax,setMMax] = useState(20);
       function onManualSave(){
-        const pl  = normalizeName(mPl||'').trim();
-        const asm = normalizeName(mAsm||'').trim();
-        const art = (mArt||'').trim();
-        const maxRaw = String(mMax).trim();
-        const isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
-        const maxNum = isNum ? Math.max(1, Number(maxRaw)) : 20;
-        if (!pl || !asm) { alert('Produktlinie und Baugruppe sind Pflicht.'); return; }
+  const plBase  = normalizeName(mPl||'').trim();
+  const asmBase = normalizeName(mAsm||'').trim();
+  const art     = (mArt||'').trim();
 
-        setDataRaw(prev=>{
-          const next = JSON.parse(JSON.stringify(prev||{}));
-          next[pl] = next[pl] || { assemblies:{} };
-          const prevAsm = next[pl].assemblies[asm] || {};
-          next[pl].assemblies[asm] = {
-            article_no: (art || prevAsm.article_no || '').trim(),
-            max_per_box: maxNum,
-            max_label: maxRaw || prevAsm.max_label || String(maxNum)
-          };
-          return normalizeData(next);
-        });
-        setPlSel(pl); setAsmSel(asm);
-        setQty(maxRaw);
-        setMPl(''); setMAsm(''); setMArt(''); setMMax(20);
-        alert('Gespeichert.');
-      }
+  const maxRaw = String(mMax).trim();           // darf "K", "P", "30/30" etc. sein
+  const isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
+  const maxNum = isNum ? Math.max(1, Number(maxRaw)) : 20;
+
+  if (!plBase || !asmBase) { alert('Produktlinie und Baugruppe sind Pflicht.'); return; }
+
+  setDataRaw(prev=>{
+    const next = JSON.parse(JSON.stringify(prev||{}));
+    next[plBase] = next[plBase] || { assemblies:{} };
+
+    // ❶ Standard-Key wäre die reine Baugruppe
+    let asmKey = asmBase;
+
+    // ❷ Gibt es schon dieselbe Baugruppe?
+    const existing = next[plBase].assemblies[asmKey];
+
+    // ❸ Falls vorhanden UND die Artikelnummer unterschiedlich ist:
+    //     -> Key um Artikelnummer erweitern, z. B. "Fußteil (61-90-35)"
+    if (existing && (existing.article_no||'').trim() && art &&
+        existing.article_no.trim() !== art) {
+      asmKey = `${asmBase} (${art})`;
+    }
+
+    const prevAsm = next[plBase].assemblies[asmKey] || {};
+    next[plBase].assemblies[asmKey] = {
+      article_no: (art || prevAsm.article_no || '').trim(),
+      max_per_box: maxNum,
+      max_label: maxRaw || prevAsm.max_label || String(maxNum)
+    };
+
+    return normalizeData(next);
+  });
+
+  // Auswahl auf den neu angelegten Datensatz setzen
+  setPlSel(plBase);
+  setAsmSel(`${asmBase}${art ? ` (${art})` : ''}`);
+
+  // Eingabefelder zurücksetzen
+  setQty(maxRaw);
+  setMPl(''); setMAsm(''); setMArt(''); setMMax(20);
+  alert('Gespeichert.');
+}
 
       // Init Speicher
       useEffect(()=>{
@@ -491,25 +509,35 @@ useEffect(() => {
             let added = 0, firstPL='', firstASM='';
 
             rows.forEach(r=>{
-              const pl  = normalizeName(r.produktlinie||'');
-              const asm = normalizeName(r.baugruppe||'');
-              if (!pl || !asm) return;
+              // ...
+const pl  = normalizeName(r.produktlinie||'');
+const asmBase = normalizeName(r.baugruppe||'');
+const art = (r.artikelnummer || '').trim();
+if (!pl || !asmBase) return;
 
-              next[pl] = next[pl] || { assemblies:{} };
-              const cur  = next[pl].assemblies[asm] || {};
+next[pl] = next[pl] || { assemblies:{} };
+let asmKey = asmBase;
 
-              const maxRaw = String(r.max_label ?? r.max_per_box ?? '').trim();
-              const isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
-              const maxNum = isNum ? Math.max(1, Number(maxRaw)) : Math.max(1, Number(r.max_per_box || cur.max_per_box || 20));
+// Prüfen, ob gleicher Baugruppen-Name bereits existiert und Art.-Nr. abweicht
+const exists = next[pl].assemblies[asmKey];
+if (exists && (exists.article_no||'').trim() && art &&
+    exists.article_no.trim() !== art) {
+  asmKey = `${asmBase} (${art})`;
+}
 
-              next[pl].assemblies[asm] = {
-                article_no: (r.artikelnummer || cur.article_no || '').trim(),
-                max_per_box: maxNum,
-                max_label: maxRaw || cur.max_label || String(maxNum)
-              };
-              added++;
-              if (!firstPL){ firstPL = pl; firstASM = asm; }
-            });
+const cur  = next[pl].assemblies[asmKey] || {};
+
+// max_* wie bei dir bisher:
+const maxRaw = String(r.max_label ?? r.max_per_box ?? '').trim();
+const isNum  = /^\d+(\.\d+)?$/.test(maxRaw);
+const maxNum = isNum ? Math.max(1, Number(maxRaw)) : Math.max(1, Number(r.max_per_box || cur.max_per_box || 20));
+
+next[pl].assemblies[asmKey] = {
+  article_no: art || cur.article_no || '',
+  max_per_box: maxNum,
+  max_label: maxRaw || cur.max_label || String(maxNum)
+};
+// ...
 
             const nextNorm = normalizeData(next);
             if (!added || !Object.keys(nextNorm).length) {
