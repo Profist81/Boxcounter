@@ -93,16 +93,28 @@
       return { support, open, get, set };
     })();
 
-    // ---------- Utils ----------
-    const uid = () => Math.random().toString(36).slice(2)+Date.now().toString(36);
-    const titleCase = s => (s||'').trim().replace(/\s+/g,' ').toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
-    const normalizeName = s => titleCase(String(s||'').trim());
-    const todayISO = () => new Date().toISOString().slice(0,10);
-    const fmtDEfromISO = iso => { if (!iso) return ''; const a=String(iso).split('-'); return a.length===3 ? (a[2]+'.'+a[1]+'.'+a[0]) : iso; };
-    const sumEntries = arr => (arr||[]).reduce((a,b) => a + (Number(b.qty)||0), 0);
-    const dashTextFromEntries = arr => {arr=arr||[]; return arr.length? ('-'+arr.map(x=>String(x.qty)).join('-')+'-') : '-';};
-    const downloadFile = (filename, text, type='text/plain') => { const blob = new Blob([text], {type}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); };
-    const copyText = text => { try{ if(navigator.clipboard?.writeText){ navigator.clipboard.writeText(text); return true; } }catch(_){} const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.style.position='fixed'; ta.style.opacity='0'; ta.select(); document.execCommand('copy'); document.body.removeChild(ta); return true; };
+   // ---------- Utils ----------
+const uid = () => Math.random().toString(36).slice(2)+Date.now().toString(36);
+const titleCase = s => (s||'').trim().replace(/\s+/g,' ').toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+const normalizeName = s => titleCase(String(s||'').trim());
+const todayISO = () => new Date().toISOString().slice(0,10);
+const fmtDEfromISO = iso => { if (!iso) return ''; const a=String(iso).split('-'); return a.length===3 ? (a[2]+'.'+a[1]+'.'+a[0]) : iso; };
+const sumEntries = arr => (arr||[]).reduce((a,b) => a + (Number(b.qty)||0), 0);
+const dashTextFromEntries = arr => {arr=arr||[]).length? ('-'+arr.map(x=>String(x.qty)).join('-')+'-') : '-';};
+const downloadFile = (filename, text, type='text/plain') => { /* ... */ };
+const copyText = text => { /* ... */ };
+
+/* === NEU: Zeitstempel ddMMyyHHmm, z.B. 2109251233 === */
+function tsStamp(d = new Date()){
+  const pad = n => String(n).padStart(2,'0');
+  return (
+    pad(d.getDate()) +
+    pad(d.getMonth()+1) +
+    String(d.getFullYear()).slice(-2) +
+    pad(d.getHours()) +
+    pad(d.getMinutes())
+  );
+}
 
     // ---------- CSV Parser ----------
 function parseCSV(text){
@@ -620,24 +632,53 @@ const onDownloadCSV = () => {
   downloadFile('boxcountermini.csv', bom + rows.join('\n'), 'text/csv');
 };
       const onDownloadPDF = ()=>{
-        const jsPDF = window.jspdf && window.jspdf.jsPDF;
-        if (!jsPDF) { alert('jsPDF nicht geladen'); return; }
-        const doc = new jsPDF({ unit:'pt', format:'a4' });
-        let y = 40;
-        doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('BoxCounterMini – Übersicht', 40, y); y+=20;
-        doc.setFont('helvetica',''); doc.setFontSize(11);
-        if (dateText) { doc.text('Datum: ' + dateText, 40, y); y+=20; }
-        items.forEach(it=>{
-          const head = it.article_no ? (it.pl + ' ' + it.asm + ' ' + it.article_no) : (it.pl + ' ' + it.asm);
-          const body = dashTextFromEntries(it.entries);
-          const total= 'Gesamt: ' + String(sumEntries(it.entries));
-          [head, body, total, ''].forEach(line=>{
-            const split = doc.splitTextToSize(line, 515);
-            split.forEach(l=>{ if (y>780){ doc.addPage(); y=40; } doc.text(l, 40, y); y += 16; });
-          });
-        });
-        doc.save('boxcountermini.pdf');
-      };
+  const jsPDF = window.jspdf && window.jspdf.jsPDF;
+  if (!jsPDF) { alert('jsPDF nicht geladen'); return; }
+  const doc = new jsPDF({ unit:'pt', format:'a4' });
+
+  let y = 40;
+  doc.setFont('helvetica','bold'); doc.setFontSize(14);
+  doc.text('BoxCounterMini – Übersicht', 40, y); y+=20;
+
+  doc.setFont('helvetica',''); doc.setFontSize(11);
+  if (dateText) { doc.text('Datum: ' + dateText, 40, y); y+=20; }
+  items.forEach(it=>{
+    const head = it.article_no ? (it.pl + ' ' + it.asm + ' ' + it.article_no) : (it.pl + ' ' + it.asm);
+    const body = dashTextFromEntries(it.entries);
+    const total= 'Gesamt: ' + String(sumEntries(it.entries));
+    [head, body, total, ''].forEach(line=>{
+      const split = doc.splitTextToSize(line, 515);
+      split.forEach(l=>{ if (y>780){ doc.addPage(); y=40; } doc.text(l, 40, y); y += 16; });
+    });
+  });
+
+  const name = `BoxCounter${tsStamp()}.pdf`;   // <- neu: Datums+Uhrzeit im Dateinamen
+  doc.save(name);
+};
+      const onDownloadPDFTemp = ()=>{
+  const jsPDF = window.jspdf && window.jspdf.jsPDF;
+  if (!jsPDF) { alert('jsPDF nicht geladen'); return; }
+  const doc = new jsPDF({ unit:'pt', format:'a4' });
+
+  let y = 40;
+  doc.setFont('helvetica','bold'); doc.setFontSize(14);
+  doc.text('BoxCounterMini – Zwischenspeicherung', 40, y); y+=20;
+
+  doc.setFont('helvetica',''); doc.setFontSize(11);
+  if (dateText) { doc.text('Datum: ' + dateText, 40, y); y+=20; }
+  items.forEach(it=>{
+    const head = it.article_no ? (it.pl + ' ' + it.asm + ' ' + it.article_no) : (it.pl + ' ' + it.asm);
+    const body = dashTextFromEntries(it.entries);
+    const total= 'Gesamt: ' + String(sumEntries(it.entries));
+    [head, body, total, ''].forEach(line=>{
+      const split = doc.splitTextToSize(line, 515);
+      split.forEach(l=>{ if (y>780){ doc.addPage(); y=40; } doc.text(l, 40, y); y += 16; });
+    });
+  });
+
+  const name = `Zwischenspeichern${tsStamp()}.pdf`; // <- neu
+  doc.save(name);
+};
 
       // PWA Hilfsfunktionen
       function manifestJSON(){
@@ -891,15 +932,25 @@ const onDownloadCSV = () => {
           </Section>
 
           {/* Export */}
+         <Section title="Export">
+  <div className="flex flex-wrap gap-2">
+    <Button onClick={onCopyAll}>Alles kopieren</Button>
+    <Ghost onClick={onDownloadTXT}>TXT</Ghost>
+    <Ghost onClick={onDownloadCSV}>CSV</Ghost>
+    <Ghost onClick={onDownloadPDF}>PDF</Ghost>
+  </div>
+  <pre className="mt-3 text-xs bg-slate-50 p-3 rounded-xl overflow-x-auto">{buildAllText()}</pre>
+</Section>
           <Section title="Export">
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={onCopyAll}>Alles kopieren</Button>
-              <Ghost onClick={onDownloadTXT}>TXT</Ghost>
-              <Ghost onClick={onDownloadCSV}>CSV</Ghost>
-              <Ghost onClick={onDownloadPDF}>PDF</Ghost>
-            </div>
-            <pre className="mt-3 text-xs bg-slate-50 p-3 rounded-xl overflow-x-auto">{buildAllText()}</pre>
-          </Section>
+  <div className="flex flex-wrap gap-2">
+    <Button onClick={onCopyAll}>Alles kopieren</Button>
+    <Ghost onClick={onDownloadTXT}>TXT</Ghost>
+    <Ghost onClick={onDownloadCSV}>CSV</Ghost>
+    <Ghost onClick={onDownloadPDF}>PDF</Ghost>
+    <Ghost onClick={onDownloadPDFTemp}>PDF (Zwischenspeichern)</Ghost> {/* NEU */}
+  </div>
+  <pre className="mt-3 text-xs bg-slate-50 p-3 rounded-xl overflow-x-auto">{buildAllText()}</pre>
+</Section>
 
           {/* CSV Import */}
           <Section
