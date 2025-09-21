@@ -456,7 +456,7 @@ const [mMax, setMMax] = useState(20);
   }
 
   const msg = `${asmSel} (${plSel})${article_no ? ` [${article_no}]` : ''} – ${q} hinzugefügt`;
-  pushToast(msg, 600);
+  pushToast(msg, 1000);
   navigator.vibrate?.(20);
 };
 
