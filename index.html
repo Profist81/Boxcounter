@@ -94,27 +94,53 @@
     })();
 
    // ---------- Utils ----------
-const uid = () => Math.random().toString(36).slice(2)+Date.now().toString(36);
-const titleCase = s => (s||'').trim().replace(/\s+/g,' ').toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
-const normalizeName = s => titleCase(String(s||'').trim());
-const todayISO = () => new Date().toISOString().slice(0,10);
-const fmtDEfromISO = iso => { if (!iso) return ''; const a=String(iso).split('-'); return a.length===3 ? (a[2]+'.'+a[1]+'.'+a[0]) : iso; };
-const sumEntries = arr => (arr||[]).reduce((a,b) => a + (Number(b.qty)||0), 0);
-const dashTextFromEntries = arr => {arr=arr||[]).length? ('-'+arr.map(x=>String(x.qty)).join('-')+'-') : '-';};
-const downloadFile = (filename, text, type='text/plain') => {
-const copyText = text => { /* ... */ };
+  const uid = () => Math.random().toString(36).slice(2)+Date.now().toString(36);
+  const titleCase = s => (s||'').trim().replace(/\s+/g,' ').toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+  const normalizeName = s => titleCase(String(s||'').trim());
+  const todayISO = () => new Date().toISOString().slice(0,10);
+  const fmtDEfromISO = iso => { if (!iso) return ''; const a=String(iso).split('-'); return a.length===3 ? (a[2]+'.'+a[1]+'.'+a[0]) : iso; };
+  const sumEntries = arr => (arr||[]).reduce((a,b) => a + (Number(b.qty)||0), 0);
 
-/* === NEU: Zeitstempel ddMMyyHHmm, z.B. 2109251233 === */
-function tsStamp(d = new Date()){
-  const pad = n => String(n).padStart(2,'0');
-  return (
-    pad(d.getDate()) +
-    pad(d.getMonth()+1) +
-    String(d.getFullYear()).slice(-2) +
-    pad(d.getHours()) +
-    pad(d.getMinutes())
-  );
-}
+  const dashTextFromEntries = arr => {
+    arr = arr || [];
+    return arr.length ? ('-' + arr.map(x => String(x.qty)).join('-') + '-') : '-';
+  };
+
+  const downloadFile = (filename, text, type='text/plain') => {
+    const blob = new Blob([text], { type });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const copyText = text => {
+    try {
+      if (navigator.clipboard?.writeText) { navigator.clipboard.writeText(text); return true; }
+    } catch(_) {}
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.style.position='fixed'; ta.style.opacity='0';
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    return true;
+  };
+
+  /* Zeitstempel ddMMyyHHmm, z.B. 2109251233 */
+  function tsStamp(d = new Date()){
+    const pad = n => String(n).padStart(2,'0');
+    return (
+      pad(d.getDate()) +
+      pad(d.getMonth()+1) +
+      String(d.getFullYear()).slice(-2) +
+      pad(d.getHours()) +
+      pad(d.getMinutes())
+    );
+  }
 
     // ---------- CSV Parser ----------
 function parseCSV(text){
