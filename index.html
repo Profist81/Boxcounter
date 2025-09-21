@@ -247,7 +247,7 @@
     function App(){
   // Toast-Status
   const [toasts, setToasts] = useState([]);
-  function pushToast(text, ms = 500) {
+function pushToast(text, ms = 500) { /* … */ }
     const id = uid();
     setToasts(t => t.concat({ id, text }));
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), ms);
@@ -424,10 +424,11 @@ const [mMax, setMMax] = useState(20);
       const onAddEntry = ()=>{
   if (!plSel || !asmSel) return;
 
-  const entry = dataRaw[plSel]?.assemblies?.[asmSel] || {};
-  const qInput = String(qty).trim();
-  const isNum  = /^\d+(\.\d+)?$/.test(qInput);
-  const q      = isNum ? Math.max(0, Number(qInput)) : qInput.toUpperCase();
+  const entry   = dataRaw[plSel]?.assemblies?.[asmSel] || {};
+  const qInput  = String(qty).trim();
+  const isNum   = /^\d+(\.\d+)?$/.test(qInput);
+  const q       = isNum ? Math.max(0, Number(qInput))
+                        : (qInput === '' ? '0' : qInput.toUpperCase());
 
   const article_no = entry.article_no || '';
   const draft = findDraft(plSel, asmSel);
@@ -452,11 +453,10 @@ const [mMax, setMMax] = useState(20);
     }]));
   }
 
-  // <-- Toast EINMAL nach dem Setzen der Items
   const msg = `${asmSel} (${plSel})${article_no ? ` [${article_no}]` : ''} – ${q} hinzugefügt`;
   pushToast(msg, 600);
+  navigator.vibrate?.(20);
 };
-
             id: uid(),
             pl: plSel,
             asm: asmSel,
