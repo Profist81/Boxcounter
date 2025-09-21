@@ -165,16 +165,7 @@ function parseCSV(text){
   return rows;
 }
     // ---------- Startdaten ----------
-    const START_DATA = {
-      'Salsa': { assemblies: {
-        'Untergestell': { article_no: '57-90-10', max_per_box: 20, max_label: '20' },
-        'Rückenteil':   { article_no: '57-90-12', max_per_box: 15, max_label: '15' },
-        'Armstützenbügel': { article_no: '', max_per_box: 30, max_label: '30' },
-      }},
-      'Sensai': { assemblies: {
-        'Rückenteil':   { article_no: '61-90-01-V4', max_per_box: 25, max_label: '25' }
-      }},
-    };
+const START_DATA = {};
 
     // ---------- Normalisierung ----------
     function normalizeData(raw){
