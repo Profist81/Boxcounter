@@ -101,7 +101,7 @@ const todayISO = () => new Date().toISOString().slice(0,10);
 const fmtDEfromISO = iso => { if (!iso) return ''; const a=String(iso).split('-'); return a.length===3 ? (a[2]+'.'+a[1]+'.'+a[0]) : iso; };
 const sumEntries = arr => (arr||[]).reduce((a,b) => a + (Number(b.qty)||0), 0);
 const dashTextFromEntries = arr => {arr=arr||[]).length? ('-'+arr.map(x=>String(x.qty)).join('-')+'-') : '-';};
-const downloadFile = (filename, text, type='text/plain') => { /* ... */ };
+const downloadFile = (filename, text, type='text/plain') => {
 const copyText = text => { /* ... */ };
 
 /* === NEU: Zeitstempel ddMMyyHHmm, z.B. 2109251233 === */
@@ -938,16 +938,6 @@ const onDownloadCSV = () => {
     <Ghost onClick={onDownloadTXT}>TXT</Ghost>
     <Ghost onClick={onDownloadCSV}>CSV</Ghost>
     <Ghost onClick={onDownloadPDF}>PDF</Ghost>
-  </div>
-  <pre className="mt-3 text-xs bg-slate-50 p-3 rounded-xl overflow-x-auto">{buildAllText()}</pre>
-</Section>
-          <Section title="Export">
-  <div className="flex flex-wrap gap-2">
-    <Button onClick={onCopyAll}>Alles kopieren</Button>
-    <Ghost onClick={onDownloadTXT}>TXT</Ghost>
-    <Ghost onClick={onDownloadCSV}>CSV</Ghost>
-    <Ghost onClick={onDownloadPDF}>PDF</Ghost>
-    <Ghost onClick={onDownloadPDFTemp}>PDF (Zwischenspeichern)</Ghost> {/* NEU */}
   </div>
   <pre className="mt-3 text-xs bg-slate-50 p-3 rounded-xl overflow-x-auto">{buildAllText()}</pre>
 </Section>
