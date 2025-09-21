@@ -398,13 +398,6 @@ const [mMax, setMMax] = useState(20);
         return it ? it.max_per_box : 20;
       }, [plSel, asmSel, dataRaw]);
 
-      // Untere Grenze 1, aber KEINE Max-Grenze mehr (unendlich zulassen)
-// Untere Grenze 1, KEINE Obergrenze mehr (unendlich möglich)
-useEffect(() => {
-  const n = Number(qty);
-  if (!Number.isNaN(n) && n < 1) setQty(1);
-}, [qty]);
-
       const findGreen = (pl, asm)=> items.find(it=> it.pl===pl && it.asm===asm && it.written);
       const findDraft = (pl, asm)=> items.find(it=> it.pl===pl && it.asm===asm && !it.written);
 
@@ -425,8 +418,10 @@ useEffect(() => {
         const mpb   = entry.max_per_box || 20;
 
         const qInput = String(qty).trim();
-        const isNum  = /^\d+(\.\d+)?$/.test(qInput);
-        const q = isNum ? Math.max(1, Number(qInput)) : qInput.toUpperCase();
+const isNum  = /^\d+(\.\d+)?$/.test(qInput);
+// Bisher vermutlich: Math.max(1, Number(qInput))
+// Neu:
+const q = isNum ? Math.max(0, Number(qInput)) : qInput.toUpperCase();
 
         const article_no = entry.article_no || '';
         const draft = findDraft(plSel, asmSel);
@@ -770,13 +765,20 @@ const onDownloadCSV = () => {
                 <label className="block text-sm text-slate-600 mb-1">
                   Menge pro Gebinde (max. {(dataRaw[plSel]?.assemblies?.[asmSel]?.max_label) ?? maxForCurrent})
                 </label>
-                <input
-                  type="text"
-                  value={qty}
-                  onChange={e=>setQty(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-3"
-                  placeholder="z.B. 20 oder K / P / 30/30"
-                />
+               <input
+  type="text"
+  value={qty}
+  onChange={e => setQty(e.target.value)}   // frei tippen möglich (auch kurz leer)
+  onBlur={e => {
+    const v = e.target.value.trim();
+    if (v === '') { setQty('0'); return; }  // leer -> "0"
+    const n = Number(v);
+    if (!Number.isNaN(n) && n < 0) setQty('0'); // negativ -> "0"
+    // positive Zahl oder Text (K/P/30/30) bleibt unverändert
+  }}
+  className="w-full rounded-xl border border-slate-300 px-3 py-3"
+  placeholder="z.B. 20 oder K / P / 30/30"
+/>
               </div>
               <div className="flex gap-2">
                 <Button onClick={onAddEntry}>Gebinde hinzufügen</Button>
