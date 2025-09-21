@@ -245,7 +245,6 @@
 
     // ---------- App ----------
     function App(){
-      function App(){
   // Toast-Status
   const [toasts, setToasts] = useState([]);
   function pushToast(text, ms = 500) {
@@ -423,34 +422,40 @@ const [mMax, setMMax] = useState(20);
 
       // EINMAL KORREKT: onAddEntry
       const onAddEntry = ()=>{
-        if (!plSel || !asmSel) return;
-        const entry = dataRaw[plSel]?.assemblies?.[asmSel] || {};
-        const mpb   = entry.max_per_box || 20;
+  if (!plSel || !asmSel) return;
 
-        const qInput = String(qty).trim();
-const isNum  = /^\d+(\.\d+)?$/.test(qInput);
-// Bisher vermutlich: Math.max(1, Number(qInput))
-// Neu:
-const q = isNum ? Math.max(0, Number(qInput)) : qInput.toUpperCase();
+  const entry = dataRaw[plSel]?.assemblies?.[asmSel] || {};
+  const qInput = String(qty).trim();
+  const isNum  = /^\d+(\.\d+)?$/.test(qInput);
+  const q      = isNum ? Math.max(0, Number(qInput)) : qInput.toUpperCase();
 
-        const article_no = entry.article_no || '';
-        const draft = findDraft(plSel, asmSel);
+  const article_no = entry.article_no || '';
+  const draft = findDraft(plSel, asmSel);
 
-        if (draft) {
-          setItems(prev => prev.map(it =>
-            // präzise Meldung bauen und anzeigen
-const msg = `${asmSel} (${plSel})${article_no ? ` [${article_no}]` : ''} – ${q} hinzugefügt`;
-pushToast(msg, 600); // 0,6s sichtbar
+  if (draft) {
+    setItems(prev => prev.map(it =>
+      it.id === draft.id
+        ? { ...it, entries: it.entries.concat([{ qty: q }]), updatedAt: Date.now() }
+        : it
+    ));
+  } else {
+    setItems(prev => prev.concat([{
+      id: uid(),
+      pl: plSel,
+      asm: asmSel,
+      article_no,
+      written: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      status: { reported:false, orderWritten:false, printed:false },
+      entries: [{ qty: q }]
+    }]));
+  }
 
-            it.id===draft.id
-              ? { ...it, entries: it.entries.concat([{ qty: q }]), updatedAt: Date.now() }
-              : it
-          ));
-        } else {
-          setItems(prev => prev.concat([{
-            // präzise Meldung bauen und anzeigen
-const msg = `${asmSel} (${plSel})${article_no ? ` [${article_no}]` : ''} – ${q} hinzugefügt`;
-pushToast(msg, 600); // 0,6s sichtbar
+  // <-- Toast EINMAL nach dem Setzen der Items
+  const msg = `${asmSel} (${plSel})${article_no ? ` [${article_no}]` : ''} – ${q} hinzugefügt`;
+  pushToast(msg, 600);
+};
 
             id: uid(),
             pl: plSel,
