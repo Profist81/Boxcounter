@@ -245,6 +245,16 @@
 
     // ---------- App ----------
     function App(){
+      function App(){
+  // Toast-Status
+  const [toasts, setToasts] = useState([]);
+  function pushToast(text, ms = 500) {
+    const id = uid();
+    setToasts(t => t.concat({ id, text }));
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), ms);
+  }
+
+  // ... deine restlichen States/Hooks folgen hier
       const inApp = /WhatsApp|FBAN|FBAV|Instagram|Line\/|WeChat|WebView/i.test(navigator.userAgent);
 
       const [storeMode, setStoreMode] = useState('local');
@@ -428,12 +438,20 @@ const q = isNum ? Math.max(0, Number(qInput)) : qInput.toUpperCase();
 
         if (draft) {
           setItems(prev => prev.map(it =>
+            // präzise Meldung bauen und anzeigen
+const msg = `${asmSel} (${plSel})${article_no ? ` [${article_no}]` : ''} – ${q} hinzugefügt`;
+pushToast(msg, 600); // 0,6s sichtbar
+
             it.id===draft.id
               ? { ...it, entries: it.entries.concat([{ qty: q }]), updatedAt: Date.now() }
               : it
           ));
         } else {
           setItems(prev => prev.concat([{
+            // präzise Meldung bauen und anzeigen
+const msg = `${asmSel} (${plSel})${article_no ? ` [${article_no}]` : ''} – ${q} hinzugefügt`;
+pushToast(msg, 600); // 0,6s sichtbar
+
             id: uid(),
             pl: plSel,
             asm: asmSel,
@@ -977,6 +995,15 @@ const onDownloadCSV = () => {
           </Section>
 
           <footer className="mt-6 text-center text-xs text-slate-500">Offline-fähig (nach Installation) • © BoxCounterMini</footer>
+          {/* Toasts – GENAU HIER nach dem Footer einfügen */}
+<div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 space-y-2 w-[92%] max-w-md pointer-events-none">
+  {toasts.map(t => (
+    <div key={t.id} className="pointer-events-auto bg-black/80 text-white text-sm px-3 py-2 rounded-lg shadow-soft">
+      {t.text}
+    </div>
+  ))}
+</div>
+
         </div>
       );
     }
