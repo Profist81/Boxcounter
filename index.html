@@ -245,13 +245,14 @@
 
     // ---------- App ----------
     function App(){
-  // Toast-Status
-  const [toasts, setToasts] = useState([]);
-function pushToast(text, ms = 500) { /* … */ }
-    const id = uid();
-    setToasts(t => t.concat({ id, text }));
-    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), ms);
-  }
+  // Toasts
+const [toasts, setToasts] = useState([]);
+
+function pushToast(text, ms = 600) {
+  const id = uid();
+  setToasts(t => t.concat({ id, text }));
+  setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), ms);
+
 
   // ... deine restlichen States/Hooks folgen hier
       const inApp = /WhatsApp|FBAN|FBAV|Instagram|Line\/|WeChat|WebView/i.test(navigator.userAgent);
@@ -457,18 +458,6 @@ const [mMax, setMMax] = useState(20);
   pushToast(msg, 600);
   navigator.vibrate?.(20);
 };
-            id: uid(),
-            pl: plSel,
-            asm: asmSel,
-            article_no,
-            written: false,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            status: { reported:false, orderWritten:false, printed:false },
-            entries: [{ qty: q }]
-          }]));
-        }
-      };
 
       const removeOneEntry = (id, idx)=> setItems(prev => prev.map(it => it.id===id ? {...it, entries: it.entries.filter((_,i)=>i!==idx), updatedAt: Date.now()} : it));
       const clearEntries   = id       => setItems(prev => prev.map(it => it.id===id ? {...it, entries: [], updatedAt: Date.now()} : it));
