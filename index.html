@@ -248,7 +248,7 @@
   // Toasts
 const [toasts, setToasts] = useState([]);
 
-function pushToast(text, ms = 600) {
+function pushToast(text, ms = 1000) {
   const id = uid();
   setToasts(t => t.concat({ id, text }));
   setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), ms);
