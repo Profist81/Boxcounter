@@ -105,69 +105,65 @@
     const copyText = text => { try{ if(navigator.clipboard?.writeText){ navigator.clipboard.writeText(text); return true; } }catch(_){} const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.style.position='fixed'; ta.style.opacity='0'; ta.select(); document.execCommand('copy'); document.body.removeChild(ta); return true; };
 
     // ---------- CSV Parser ----------
-    function parseCSV(text){
-      const raw0 = String(text||'');
-      if (!raw0.trim()) return [];
+function parseCSV(text){
+  const raw0 = String(text||'');
+  if (!raw0.trim()) return [];
 
-      const raw = raw0
-        .replace(/^\uFEFF/, '')     // BOM
-        .replace(/\r/g,'')
-        .replace(/\\r/g,'')
-        .replace(/\\n/g,'\n')
-        .replace(/[\u2028\u2029]/g,'\n')
-        .trim();
+  const raw = raw0
+    .replace(/^\uFEFF/, '')     // BOM
+    .replace(/\r/g,'')
+    .replace(/\\r/g,'')
+    .replace(/\\n/g,'\n')
+    .replace(/[\u2028\u2029]/g,'\n')
+    .trim();
 
-      const lines = raw.split(/\n+/);
-      if (!lines.length) return [];
+  const lines = raw.split(/\n+/);
+  if (!lines.length) return [];
 
-      const split = line => line.split(/\s*[,;\t]\s*/);
+  const split = line => line.split(/\s*[,;\t]\s*/);
 
-      // Kopfzeile erkennen
-      let headerParts = split(lines[0]||'').map(s=>s.trim().toLowerCase());
-      const looksLikeHeader = headerParts.some(s => /artikel|baugruppe|bauteil|max|product|assembly|line/.test(s));
-      if (looksLikeHeader) lines.shift(); else headerParts = ['artikelnummer','produktlinie','baugruppe','max_per_box'];
+  // ----- Feste Spaltenreihenfolge (wie beim Export) -----
+  // 0 = produktlinie, 1 = baugruppe, 2 = artikelnummer, 3 = max_per_box, 4 = max_label
+  const first = (lines[0] || '').toLowerCase();
+  const hasHeader =
+    first.includes('produktlinie') ||
+    first.includes('baugruppe') ||
+    first.includes('artikelnummer') ||
+    first.includes('max_per_box') ||
+    first.includes('max_label');
+  if (hasHeader) lines.shift();
 
-      const idx = re => headerParts.findIndex(c=>re.test(c));
-      let idxArt = idx(/artikel\s*(nr|nummer)?|art[\.\s_-]*nr|article/);
-      let idxPL  = idx(/produktlinie|product\s*line|^pl$/);
-      let idxBG  = idx(/^baugruppe$|assembly|^bg$/);
-      let idxBT  = idx(/bauteil|komponente|teilbezeichnung/);
-      let idxMax = idx(/max[_\s]*per[_\s]*box|max|pro\s*gebinde|menge/);
+  const idxProdline = 0;
+  const idxAssembly = 1;
+  const idxArt      = 2;
+  const idxMax      = 3;
+  // -------------------------------------------------------
 
-      if (idxArt<0) idxArt = 0;
-      if (idxPL<0 && idxBG<0) idxBG = 1;
-      if (idxBT<0) idxBT = 2;
-      if (idxMax<0) idxMax = headerParts.length-1;
+  const rows = [];
+  lines.forEach(line=>{
+    if (!line.trim()) return;
+    const parts = split(line).map(s => dequote(s));
 
-      const idxProdline = (idxPL>=0) ? idxPL : idxBG;
-      const idxAssembly = (idxBT>=0) ? idxBT : idxBG;
+    const pl  = dequote(parts[idxProdline] ?? '');
+    const asm = dequote(parts[idxAssembly] ?? '');
+    const art = dequote(parts[idxArt] ?? '');
 
-      const rows = [];
-      lines.forEach(line=>{
-        if (!line.trim()) return;
-        const parts = split(line).map(s => dequote(s));
+    const maxLabel = dequote(parts[idxMax] ?? ''); // 20, K, 30/30 …
+    const m = maxLabel.match(/\d+/);
+    const max_per_box = m ? parseInt(m[0], 10) : 1; // Fallback 1
 
-        const pl  = dequote(parts[idxProdline] ?? '');
-        const asm = dequote(parts[idxAssembly] ?? '');
-        const art = dequote(parts[idxArt] ?? '');
+    if (!pl || !asm) return;
+    rows.push({
+      produktlinie: pl,
+      baugruppe: asm,
+      artikelnummer: art,
+      max_per_box,
+      max_label: maxLabel || String(max_per_box)
+    });
+  });
 
-        const maxLabel = dequote(parts[idxMax] ?? ''); // 20, K, 30/30 …
-        const m = maxLabel.match(/\d+/);
-        const max_per_box = m ? parseInt(m[0], 10) : 1; // Fallback 1
-
-        if (!pl || !asm) return;
-        rows.push({
-          produktlinie: pl,
-          baugruppe: asm,
-          artikelnummer: art,
-          max_per_box,
-          max_label: maxLabel || String(max_per_box)
-        });
-      });
-
-      return rows;
-    }
-
+  return rows;
+}
     // ---------- Startdaten ----------
     const START_DATA = {
       'Salsa': { assemblies: {
